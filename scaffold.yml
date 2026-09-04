@@ -1,0 +1,168 @@
+# yaml-language-server: $schema=https://hay-kot.github.io/scaffold/schema.json
+
+messages:
+  pre: |
+    # Go-Cinch Chi Service Generator
+
+    Generates a small, production-oriented Go HTTP service based on net/http and chi.
+    Optional infrastructure is selected at scaffold time; no job runner is included.
+
+  post: |
+    # Project Created: {{ .Computed.service_name_final }}
+
+    Next steps:
+      cd {{ .Scaffold.Project }}
+      make test
+      make run
+
+    HTTP: http://127.0.0.1:{{ .Scaffold.http_port }}
+    {{- if .Computed.enable_health_check_final }}
+    Health: http://127.0.0.1:{{ .Scaffold.http_port }}/healthz
+    {{- end }}
+
+questions:
+  - name: service_name
+    prompt:
+      message: Service name (leave empty to use Project name)?
+
+  - name: module_name
+    prompt:
+      message: Go module name (leave empty to use service_name)?
+
+  - name: http_port
+    prompt:
+      message: HTTP server port?
+      default: "8080"
+
+  - name: http_timeout
+    prompt:
+      message: Default request timeout?
+      default: "30s"
+
+  - name: enable_health_check
+    prompt:
+      message: Enable GET /healthz?
+      type: string
+      default: "true"
+
+  - name: enable_database
+    prompt:
+      message: Enable SQL database support?
+      type: string
+      default: "false"
+
+  - name: database_driver
+    when: '{{ .enable_database }}'
+    prompt:
+      message: Database driver (postgres or mysql)?
+      default: "postgres"
+
+  - name: enable_migrations
+    when: '{{ .enable_database }}'
+    prompt:
+      message: Embed and run SQL migrations at startup?
+      type: string
+      default: "true"
+
+  - name: enable_user_example
+    when: '{{ and .enable_database .enable_migrations }}'
+    prompt:
+      message: Include the User HTTP and database example?
+      type: string
+      default: "false"
+
+  - name: enable_redis
+    prompt:
+      message: Enable Redis support?
+      type: string
+      default: "false"
+
+  - name: enable_trace
+    prompt:
+      message: Include OpenTelemetry tracing support?
+      type: string
+      default: "true"
+
+computed:
+  service_name_final: '{{ or .Scaffold.service_name .Scaffold.Project }}'
+  service_name_kebab: '{{ toKebabCase (or .Scaffold.service_name .Scaffold.Project) }}'
+  service_name_snake: '{{ toSnakeCase (or .Scaffold.service_name .Scaffold.Project) }}'
+  module_name_final: '{{ or .Scaffold.module_name .Scaffold.service_name .Scaffold.Project }}'
+  enable_health_check_final: '{{ eq .Scaffold.enable_health_check "true" }}'
+  enable_database_final: '{{ eq .Scaffold.enable_database "true" }}'
+  enable_migrations_final: '{{ and (eq .Scaffold.enable_database "true") (eq .Scaffold.enable_migrations "true") }}'
+  enable_user_example_final: '{{ and (eq .Scaffold.enable_database "true") (eq .Scaffold.enable_migrations "true") (eq .Scaffold.enable_user_example "true") }}'
+  enable_redis_final: '{{ eq .Scaffold.enable_redis "true" }}'
+  enable_trace_final: '{{ eq .Scaffold.enable_trace "true" }}'
+  database_driver_final: '{{ or .Scaffold.database_driver "postgres" }}'
+
+features:
+  - value: '{{ .Computed.enable_health_check_final }}'
+    globs:
+      - "**/internal/common/server/health.go"
+      - "**/internal/common/server/health_test.go"
+
+  - value: '{{ .Computed.enable_database_final }}'
+    globs:
+      - "**/internal/infra/db/AGENTS.md"
+      - "**/internal/infra/db/create.go"
+      - "**/internal/infra/db/create_test.go"
+      - "**/internal/infra/db/database.go"
+      - "**/internal/infra/db/database_test.go"
+      - "**/internal/infra/db/transaction.go"
+      - "**/internal/infra/db/transaction_test.go"
+      - "**/conf/database.yml"
+
+  - value: '{{ .Computed.enable_migrations_final }}'
+    globs:
+      - "**/internal/infra/db/migrate.go"
+      - "**/internal/infra/db/migrations_embed.go"
+      - "**/internal/infra/db/migrate_test.go"
+
+  - value: '{{ and .Computed.enable_migrations_final (not .Computed.enable_user_example_final) }}'
+    globs:
+      - "**/internal/infra/db/migrations/YYYYMMDDHH-initial.sql.example"
+
+  - value: '{{ .Computed.enable_user_example_final }}'
+    globs:
+      - "**/internal/infra/db/migrations/YYYYMMDDHH-user.sql"
+      - "**/internal/modules/user/**"
+
+  - value: '{{ .Computed.enable_redis_final }}'
+    globs:
+      - "**/internal/infra/rds/**"
+      - "**/conf/redis.yml"
+
+  - value: '{{ .Computed.enable_trace_final }}'
+    globs:
+      - "**/internal/common/server/trace.go"
+      - "**/internal/common/server/trace_test.go"
+      - "**/internal/common/tracing/**"
+      - "**/conf/tracer.yml"
+
+presets:
+  default:
+    service_name: ""
+    module_name: ""
+    http_port: "8080"
+    http_timeout: "30s"
+    enable_health_check: "true"
+    enable_database: "false"
+    database_driver: "postgres"
+    enable_migrations: "false"
+    enable_user_example: "false"
+    enable_redis: "false"
+    enable_trace: "true"
+
+  full:
+    service_name: ""
+    module_name: ""
+    http_port: "8080"
+    http_timeout: "30s"
+    enable_health_check: "true"
+    enable_database: "true"
+    database_driver: "postgres"
+    enable_migrations: "true"
+    enable_user_example: "true"
+    enable_redis: "true"
+    enable_trace: "true"

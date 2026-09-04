@@ -1,0 +1,17 @@
+http:
+  addr: ":{{ .Scaffold.http_port }}"
+  timeout: {{ .Scaffold.http_timeout }}
+  readHeaderTimeout: 5s
+  idleTimeout: 2m
+  docs:
+    enabled: false
+    servers:
+      - url: "https://example.com/api/{{ .Computed.service_name_kebab }}"
+        description: "prod"
+      - url: "https://dev.example.com/api/{{ .Computed.service_name_kebab }}"
+        description: "dev"
+      - url: "http://127.0.0.1:{{ .Scaffold.http_port }}"
+        description: "local"
+  profiler:
+    enabled: false
+    addr: "127.0.0.1:6060"
