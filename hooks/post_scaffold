@@ -18,7 +18,7 @@ if [ -d "./internal/infra/db/migrations" ]; then
 fi
 
 printf '\nGenerating typed configuration...\n'
-make generate
+make gen
 
 printf '\nFormatting generated project...\n'
 gofmt -w .

@@ -1,6 +1,6 @@
 APP := {{ .Computed.service_name_kebab }}
 MODULE := $(shell go list -m)
-VERSION ?= $(shell git rev-parse HEAD 2>/dev/null | cut -c1-5)
+VERSION ?= $(shell git describe --tags --always 2>/dev/null)
 ifeq ($(strip $(VERSION)),)
 VERSION := dev
 endif

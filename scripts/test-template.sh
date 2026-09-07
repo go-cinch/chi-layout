@@ -23,6 +23,11 @@ for preset in default full; do
   generated="$output_dir/$project"
   (
     cd "$generated"
+    test -f .dockerignore
+    ! grep -Eq '^/?\.git/?$' .dockerignore
+    grep -q '^RUN make build$' Dockerfile
+    ! grep -q 'ARG VERSION' Dockerfile
+    ! grep -q 'go build.*ldflags' Dockerfile
     make gen
     gofmt -w .
     go mod tidy
@@ -30,6 +35,24 @@ for preset in default full; do
     go build ./...
   )
 done
+
+# Exercise the template hook itself. The preset checks above deliberately skip
+# hooks so each build step can be asserted independently; this smoke test makes
+# sure the user-facing --run-hooks=always path remains executable as well.
+project="chi-hook"
+output_dir="$tmp_dir/hook"
+mkdir -p "$output_dir"
+printf 'Generating project with post-scaffold hook enabled...\n'
+scaffold new "$template_dir" \
+  --output-dir="$output_dir" \
+  --run-hooks=always \
+  --no-prompt \
+  --preset=default \
+  "Project=$project" \
+  "module_name=example.com/$project"
+test -f "$output_dir/$project/internal/common/config/config.gen.go"
+test -f "$output_dir/$project/internal/app/modules.gen.go"
+test -x "$output_dir/$project/bin/$project"
 
 project="chi-mysql"
 output_dir="$tmp_dir/mysql"
