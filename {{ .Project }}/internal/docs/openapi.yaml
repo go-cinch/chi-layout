@@ -36,10 +36,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 {{- end }}
 {{- if .Computed.enable_user_example_final }}
-  /users/{id}:
+  /user/{id}:
     get:
-      summary: "GET /users/{id}"
-      operationId: getUsersId
+      summary: "GET /user/{id}"
+      operationId: getUserId
       tags: ["User"]
       parameters:
         - name: id

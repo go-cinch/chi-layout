@@ -1,39 +1,79 @@
 package server
 
 import (
-	"bytes"
-	"log/slog"
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"testing"
+    "bytes"
+    "encoding/json"
+    "fmt"
+    "log/slog"
+    "net/http"
+    "net/http/httptest"
+    "regexp"
+    "strings"
+    "testing"
 
-	"{{ .Computed.module_name_final }}/internal/common/redact"
-
-	"github.com/go-chi/chi/v5"
+    "{{ .Computed.module_name_final }}/internal/common/redact"
+{{ if eq .Computed.http_router_final "gin" -}}
+    "github.com/gin-gonic/gin"
+{{ else -}}
+    "github.com/go-chi/chi/v5"
+{{ end -}}
 )
 
 func TestAccessLogRedactsPath(t *testing.T) {
-	var output bytes.Buffer
-	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewJSONHandler(&output, nil)))
-	t.Cleanup(func() { slog.SetDefault(previous) })
-	router := chi.NewRouter()
-	router.Use(AccessLog(redact.New()))
-	router.Get("/reset/{token}", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	})
-	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/reset/abcdef", nil))
-	if strings.Contains(output.String(), "/reset/abcdef") || !strings.Contains(output.String(), `"path":"/reset/abc***"`) {
-		t.Fatalf("log output = %q", output.String())
-	}
-	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/reset/not-sensitive", nil))
-	plainRouter := chi.NewRouter()
-	plainRouter.Use(AccessLog(redact.New()))
-	plainRouter.Get("/users/{id}", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
-	plainRouter.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/users/42", nil))
-	request := httptest.NewRequest(http.MethodGet, "/plain", nil)
-	if path := redactedPath(request, redact.New()); path != "/plain" {
-		t.Fatalf("plain path = %q", path)
-	}
+    var output bytes.Buffer
+    previous := slog.Default()
+    slog.SetDefault(slog.New(slog.NewJSONHandler(&output,nil)))
+    t.Cleanup(func(){ slog.SetDefault(previous) })
+{{ if eq .Computed.http_router_final "gin" -}}
+    r := gin.New()
+    r.Use(AccessLog(redact.New()),Recoverer())
+    r.NoRoute(func(c *gin.Context){ WriteError(c.Writer,404,"Not Found") })
+    r.GET("/reset/:token",func(c *gin.Context){ c.Status(204) })
+    r.GET("/user/:id",func(c *gin.Context){ WriteOK(c.Writer,map[string]string{"id":c.Param("id")}) })
+    r.GET("/panic",func(c *gin.Context){ panic("boom") })
+    resetRoute,userRoute := "/reset/:token","/user/:id"
+{{ else -}}
+    r := chi.NewRouter()
+    r.Use(AccessLog(redact.New()),Recoverer())
+    r.NotFound(func(w http.ResponseWriter,_ *http.Request){ WriteError(w,404,"Not Found") })
+    r.Get("/reset/{token}",func(w http.ResponseWriter,_ *http.Request){ w.WriteHeader(204) })
+    r.Get("/user/{id}",func(w http.ResponseWriter,req *http.Request){ WriteOK(w,map[string]string{"id":chi.URLParam(req,"id")}) })
+    r.Get("/panic",func(http.ResponseWriter,*http.Request){ panic("boom") })
+    resetRoute,userRoute := "/reset/{token}","/user/{id}"
+{{ end -}}
+    for _, test := range []struct{path, route, loggedPath string; status int}{
+        {"/reset/abcdef",resetRoute,"/reset/abc***",204},
+        {"/user/42",userRoute,"/user/42",200},
+        {"/missing","-","/missing",404},
+        {"/panic","/panic","/panic",500},
+    } {
+        output.Reset()
+        request := httptest.NewRequest(http.MethodGet,test.path,nil)
+        request.RemoteAddr = "127.0.0.1:12345"
+        request.Header.Set("User-Agent","SummaryTest/1")
+        r.ServeHTTP(httptest.NewRecorder(),request)
+        lines := strings.Split(strings.TrimSpace(output.String()),"\n")
+        var entry map[string]json.RawMessage
+        if err := json.Unmarshal([]byte(lines[len(lines)-1]),&entry); err != nil { t.Fatal(err) }
+        var message string
+        if err := json.Unmarshal(entry["msg"],&message); err != nil { t.Fatal(err) }
+        pattern := fmt.Sprintf(`^GET %d [0-9]+ms %s %s$`,test.status,regexp.QuoteMeta(test.route),regexp.QuoteMeta(test.loggedPath))
+        if !regexp.MustCompile(pattern).MatchString(message) { t.Fatalf("message: %q, want %q",message,pattern) }
+        if strings.Contains(output.String(),"abcdef") { t.Fatalf("secret leaked: %s",output.String()) }
+        for _, key := range []string{"method","status","duration_ms","route","path","bytes","client"} {
+            if _, exists := entry[key]; exists { t.Errorf("unexpected top-level attribute %q: %s",key,output.String()) }
+        }
+        for key, want := range map[string]string{"remote_addr": request.RemoteAddr, "user_agent": request.UserAgent()} {
+            var value string
+            if err := json.Unmarshal(entry[key], &value); err != nil { t.Fatal(err) }
+            if value != want { t.Errorf("%s = %q, want %q", key, value, want) }
+        }
+    }
+    request := httptest.NewRequest(http.MethodGet,"/plain",nil)
+{{ if eq .Computed.http_router_final "gin" -}}
+    path := redactedPath(request,nil,redact.New())
+{{ else -}}
+    path := redactedPath(request,redact.New())
+{{ end -}}
+    if path != "/plain" { t.Fatalf("plain path: %s",path) }
 }

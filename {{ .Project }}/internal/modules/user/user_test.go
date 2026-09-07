@@ -20,7 +20,7 @@ var registerTestDriver sync.Once
 
 func TestFind(t *testing.T) {
 	module := newTestModule(t)
-	if module.Name() != "/users" {
+	if module.Name() != "/user" {
 		t.Fatalf("Name() = %q", module.Name())
 	}
 	value, err := module.Find(t.Context(), 1)

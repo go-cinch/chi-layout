@@ -10,9 +10,14 @@
 
 ## Module Contract
 
+{{ if eq .Computed.http_router_final "gin" -}}
+- HTTP capabilities implement `modules.Module` with `HTTP(r *gin.RouterGroup)` and register routes on the provided group.
+{{ else -}}
 - HTTP capabilities implement the root `modules.Module` interface and expose their subrouter through `HTTP()`.
+{{ end -}}
 - Add a compile-time assertion such as `var _ modules.Module = (*Module)(nil)` beside every module implementation.
 - Return the final mount path from `Name()` and provide a package-level `New` constructor.
+- Business route resource names must be singular: the `user` module returns `/user` from `Name()`. Use `/user` for the collection and `/user/{id}` (chi) or `/user/:id` (Gin) for one record; nested resource nouns are also singular.
 - Constructor dependency types must match fields on `app.Application`; `make api` wires matching fields automatically.
 - Do not impose an `/api` or version prefix inside the module.
 
@@ -27,7 +32,7 @@ internal/modules/user/
 ```
 
 - `user.go` contains business types, business rules, and small capability-specific database operations.
-- `http.go` contains the public HTTP boundary: Chi router construction, handlers, request decoding, response mapping, and transport-only validation.
+- `http.go` contains the public HTTP boundary: {{ .Computed.http_router_final }} route registration, handlers, request decoding, response mapping, and transport-only validation.
 
 If another transport is required, add a transport file in the same package:
 
@@ -63,10 +68,21 @@ internal/modules/user/
 
 ## HTTP
 
+{{ if eq .Computed.http_router_final "gin" -}}
+- Register routes on the provided `*gin.RouterGroup` inside `http.go`; the application owns the single Gin engine and the module prefix.
+- Apply capability-wide middleware with `Use`, nested resource middleware with `Group`, and route-specific middleware before the final handler.
+- Use `c.Param` for path parameters and `c.Request.Context()` for downstream operations. Keep `*gin.Context` out of business methods.
+- Call `c.Abort()` when middleware rejects a request; writing an error alone does not stop subsequent handlers.
+{{ else -}}
 - Construct module routes with `chi.NewRouter` inside `http.go`.
 - Apply capability-wide middleware with `Use`, route-specific middleware with `With`, and nested resource middleware with `Route`.
+{{ end -}}
+- Use literal route paths and inline groups inside `HTTP` so `make api` can discover complete paths and final handlers.
 - Parse transport input and map transport output at the HTTP boundary; keep reusable business decisions in non-transport functions.
 - Use the shared JSON response helpers and error shape defined by the root guidelines.
+- Translate an expected missing record (`ErrNotFound`, including mapped `sql.ErrNoRows`) into HTTP 404 using `server.WriteError(w, http.StatusNotFound, message)` (or `c.Writer` for Gin). The body remains `{"msg":"..."}`.
+- HTTP 404 covers missing records and unmatched routes. Do not convert unexpected SQL/connection errors into a missing-record result; retain HTTP 500 for those failures.
+- Cover an existing record, a missing record (404 with message), an unmatched route (404), invalid input (400), and a database failure (500) in HTTP tests.
 - Propagate the request context and stop work when it is canceled.
 
 ## Growth and File Size

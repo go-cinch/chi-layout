@@ -29,7 +29,7 @@ func TestNewRouter(t *testing.T) {
 	path := "/missing"
 	want := http.StatusNotFound
 {{- if .Computed.enable_user_example_final }}
-	path = "/users/bad"
+	path = "/user/bad"
 	want = http.StatusBadRequest
 {{- end }}
 	recorder := httptest.NewRecorder()

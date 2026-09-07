@@ -1,6 +1,51 @@
+{{ if eq .Computed.http_router_final "gin" -}}
 package server
 
 import (
+	"fmt"
+	"log/slog"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"{{ .Computed.module_name_final }}/internal/common/redact"
+)
+
+func AccessLog(policy redact.Policy) gin.HandlerFunc {
+	logger := slog.Default()
+	return func(c *gin.Context) {
+		start := time.Now()
+		c.Next()
+		route := c.FullPath()
+		if route == "" {
+			route = "-"
+		}
+		message := fmt.Sprintf("%s %d %dms %s %s",
+			c.Request.Method, c.Writer.Status(), time.Since(start).Milliseconds(),
+			route, redactedPath(c.Request, c.Params, policy))
+		logger.InfoContext(c.Request.Context(), message,
+			"remote_addr", c.Request.RemoteAddr, "user_agent", c.Request.UserAgent())
+	}
+}
+
+func redactedPath(r *http.Request, params gin.Params, policy redact.Policy) string {
+	replacements := make([]string, 0, len(params)*2)
+	for _, param := range params {
+		if param.Key != "" && param.Value != "" && policy.IsSensitive(param.Key) {
+			replacements = append(replacements, param.Value, policy.Value(param.Key, param.Value))
+		}
+	}
+	if len(replacements) == 0 {
+		return r.URL.Path
+	}
+	return strings.NewReplacer(replacements...).Replace(r.URL.Path)
+}
+{{ else -}}
+package server
+
+import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -24,16 +69,13 @@ func AccessLog(policy redact.Policy) func(http.Handler) http.Handler {
 				status = http.StatusOK
 			}
 			route := chi.RouteContext(r.Context()).RoutePattern()
-			logger.InfoContext(r.Context(), "http request",
-				"method", r.Method,
-				"path", redactedPath(r, policy),
-				"route", route,
-				"status", status,
-				"bytes", writer.BytesWritten(),
-				"duration_ms", time.Since(start).Milliseconds(),
-				"remote_addr", r.RemoteAddr,
-				"user_agent", r.UserAgent(),
-			)
+			if route == "" {
+				route = "-"
+			}
+			message := fmt.Sprintf("%s %d %dms %s %s",
+				r.Method, status, time.Since(start).Milliseconds(), route, redactedPath(r, policy))
+			logger.InfoContext(r.Context(), message,
+				"remote_addr", r.RemoteAddr, "user_agent", r.UserAgent())
 		})
 	}
 }
@@ -58,3 +100,4 @@ func redactedPath(r *http.Request, policy redact.Policy) string {
 	}
 	return strings.NewReplacer(replacements...).Replace(r.URL.Path)
 }
+{{ end -}}

@@ -1,3 +1,31 @@
+{{ if eq .Computed.http_router_final "gin" -}}
+package server
+
+import (
+	"context"
+	"net/http"
+	"time"
+
+	"github.com/gin-gonic/gin"
+)
+
+// RequestTimeout cancels the request context; handlers must observe cancellation.
+func RequestTimeout(timeout time.Duration) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if timeout <= 0 {
+			c.Next()
+			return
+		}
+		ctx, cancel := context.WithTimeout(c.Request.Context(), timeout)
+		defer cancel()
+		c.Request = c.Request.WithContext(ctx)
+		c.Next()
+		if ctx.Err() == context.DeadlineExceeded && !c.Writer.Written() {
+			WriteError(c.Writer, http.StatusGatewayTimeout, http.StatusText(http.StatusGatewayTimeout))
+		}
+	}
+}
+{{ else -}}
 package server
 
 import (
@@ -22,3 +50,4 @@ func RequestTimeout(timeout time.Duration) func(http.Handler) http.Handler {
 		})
 	}
 }
+{{ end -}}

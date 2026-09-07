@@ -1,3 +1,35 @@
+{{ if eq .Computed.http_router_final "gin" -}}
+package server
+
+import (
+	"fmt"
+	"log/slog"
+	"net/http"
+	"runtime/debug"
+
+	"github.com/gin-gonic/gin"
+)
+
+func Recoverer() gin.HandlerFunc {
+	logger := slog.Default()
+	return func(c *gin.Context) {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				c.Abort()
+				if recovered == http.ErrAbortHandler {
+					logger.WarnContext(c.Request.Context(), "http request aborted")
+					return
+				}
+				logger.ErrorContext(c.Request.Context(), "panic recovered: "+fmt.Sprint(recovered), "stack", string(debug.Stack()))
+				if !c.Writer.Written() {
+					WriteError(c.Writer, http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
+				}
+			}
+		}()
+		c.Next()
+	}
+}
+{{ else -}}
 package server
 
 import (
@@ -28,3 +60,4 @@ func Recoverer() func(http.Handler) http.Handler {
 		})
 	}
 }
+{{ end -}}

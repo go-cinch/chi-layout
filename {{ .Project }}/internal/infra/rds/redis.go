@@ -38,7 +38,7 @@ func New(ctx context.Context, cfg *config.Config) (Client, func(), error) {
 			logger.Error("close redis failed: " + err.Error())
 		}
 	}
-	logger.Info("redis initialized: " + redact.DSN(dsn))
+	logger.InfoContext(ctx, "redis initialized: "+redact.DSN(dsn))
 	return client, cleanup, nil
 }
 

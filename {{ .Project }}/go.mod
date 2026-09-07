@@ -3,9 +3,12 @@ module {{ .Computed.module_name_final }}
 go 1.27.1
 
 require (
+{{- if eq .Computed.http_router_final "gin" }}
+	github.com/gin-gonic/gin v1.12.0
+{{- else }}
 	github.com/go-chi/chi/v5 v5.3.2
+{{- end }}
 	github.com/knadh/koanf/parsers/yaml v1.1.0
-	github.com/knadh/koanf/providers/env v1.1.0
 	github.com/knadh/koanf/providers/file v1.2.1
 	github.com/knadh/koanf/v2 v2.3.5
 	github.com/pmezard/go-difflib v1.0.0

@@ -4,7 +4,7 @@ messages:
   pre: |
     # Go-Cinch Chi Service Generator
 
-    Generates a small, production-oriented Go HTTP service based on net/http and chi.
+    Generates a small, production-oriented Go HTTP service based on net/http and your choice of chi or gin.
     Optional infrastructure is selected at scaffold time; no job runner is included.
 
   post: |
@@ -28,6 +28,13 @@ questions:
   - name: module_name
     prompt:
       message: Go module name (leave empty to use service_name)?
+
+  - name: http_router
+    prompt:
+      message: HTTP router?
+      type: select
+      options: [chi, gin]
+      default: "chi"
 
   - name: http_port
     prompt:
@@ -84,6 +91,9 @@ questions:
       default: "true"
 
 computed:
+  # Scaffold 0.13.1 swallows sprig fail errors. An undefined Go template
+  # action raises a native rendering error before any project files are written.
+  http_router_final: '{{ $router := or .Scaffold.http_router "chi" }}{{ if or (eq $router "chi") (eq $router "gin") }}{{ $router }}{{ else }}{{ template "http_router must be chi or gin" . }}{{ end }}'
   service_name_final: '{{ or .Scaffold.service_name .Scaffold.Project }}'
   service_name_kebab: '{{ toKebabCase (or .Scaffold.service_name .Scaffold.Project) }}'
   service_name_snake: '{{ toSnakeCase (or .Scaffold.service_name .Scaffold.Project) }}'
@@ -97,6 +107,15 @@ computed:
   database_driver_final: '{{ or .Scaffold.database_driver "postgres" }}'
 
 features:
+  - value: '{{ eq .Computed.http_router_final "gin" }}'
+    globs:
+      - "**/internal/common/logging/gin.go"
+      - "**/internal/common/logging/gin_test.go"
+
+  - value: '{{ eq .Computed.http_router_final "chi" }}'
+    globs:
+      - "**/internal/common/server/writer.go"
+
   - value: '{{ .Computed.enable_health_check_final }}'
     globs:
       - "**/internal/common/server/health.go"
@@ -144,6 +163,7 @@ presets:
   default:
     service_name: ""
     module_name: ""
+    http_router: "chi"
     http_port: "8080"
     http_timeout: "30s"
     enable_health_check: "true"
@@ -157,6 +177,7 @@ presets:
   full:
     service_name: ""
     module_name: ""
+    http_router: "chi"
     http_port: "8080"
     http_timeout: "30s"
     enable_health_check: "true"

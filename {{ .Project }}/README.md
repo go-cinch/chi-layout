@@ -1,11 +1,11 @@
 # {{ .Computed.service_name_final }}
 
-A minimal HTTP service.
+A minimal HTTP service using **{{ .Computed.http_router_final }}**.
 
 ## Run
 
 ```bash
-make config
+make gen
 make tidy
 make test
 make run

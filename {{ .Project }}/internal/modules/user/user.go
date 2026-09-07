@@ -32,7 +32,7 @@ func New(store *db.Store) *Module {
 }
 
 func (*Module) Name() string {
-	return "/users"
+	return "/user"
 }
 
 func (m *Module) Find(ctx context.Context, id int64) (*User, error) {

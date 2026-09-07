@@ -32,7 +32,11 @@ func (a *Application) NewRouter(cfg *config.Config) (http.Handler, error) {
 	mounted = append([]modules.Module{server.NewHealth(healthChecks...)}, mounted...)
 {{- end }}
 	if cfg.HTTP.Docs.Enabled {
-		mounted = append(mounted, docs.New())
+		documentation, err := docs.New(cfg.HTTP.Docs.Servers)
+		if err != nil {
+			return nil, err
+		}
+		mounted = append(mounted, documentation)
 	}
 	return server.NewRouter(cfg, mounted...)
 }

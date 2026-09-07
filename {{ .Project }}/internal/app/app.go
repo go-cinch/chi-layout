@@ -154,12 +154,12 @@ func (a *Application) Run(ctx context.Context) error {
 	}
 
 	errCh := make(chan serverResult, 2)
-	slog.Info("http server running at " + a.server.Addr)
+	slog.InfoContext(ctx, "http server running at "+a.server.Addr)
 	go func() {
 		errCh <- serverResult{name: "http", err: a.server.Serve(httpListener)}
 	}()
 	if a.profilerServer != nil {
-		slog.Info("profiler server running at " + a.profilerServer.Addr)
+		slog.InfoContext(ctx, "profiler server running at "+a.profilerServer.Addr)
 		go func() {
 			errCh <- serverResult{name: "profiler", err: a.profilerServer.Serve(profilerListener)}
 		}()
@@ -181,7 +181,7 @@ func (a *Application) Run(ctx context.Context) error {
 		if shutdownErr != nil {
 			return shutdownErr
 		}
-		slog.Info("http server stopped")
+		slog.InfoContext(ctx, "http server stopped")
 		return nil
 	case result := <-errCh:
 		if result.err != nil && !errors.Is(result.err, http.ErrServerClosed) {

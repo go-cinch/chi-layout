@@ -56,7 +56,7 @@ func createDatabase(ctx context.Context, driver, dsn string) error {
 			return fmt.Errorf("create database: %w", err)
 		}
 	}
-	slog.Info("database created: " + name)
+	slog.InfoContext(ctx, "database created: "+name)
 	return nil
 }
 

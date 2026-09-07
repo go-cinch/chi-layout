@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+	"{{ .Computed.module_name_final }}/internal/common/config"
 )
 
 func TestHealthz(t *testing.T) {
@@ -24,19 +25,26 @@ func TestHealthz(t *testing.T) {
 	if health.Name() != "/healthz" {
 		t.Fatalf("name = %q", health.Name())
 	}
-	handler := health.HTTP()
+	handler, err := NewRouter(&config.Config{}, health)
+	if err != nil {
+		t.Fatal(err)
+	}
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	if recorder.Code != http.StatusServiceUnavailable || checks != 2 || !deadlineSeen {
 		t.Fatalf("response = %d, checks = %d", recorder.Code, checks)
 	}
+	healthyRouter, err := NewRouter(&config.Config{}, NewHealth())
+	if err != nil {
+		t.Fatal(err)
+	}
 	recorder = httptest.NewRecorder()
-	NewHealth().HTTP().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	healthyRouter.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	if recorder.Code != http.StatusOK || recorder.Body.Len() != 0 {
 		t.Fatalf("healthy response = %d %q", recorder.Code, recorder.Body.String())
 	}
 	recorder = httptest.NewRecorder()
-	NewHealth().HTTP().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/healthz", nil))
+	healthyRouter.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/healthz", nil))
 	if recorder.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("method response = %d", recorder.Code)
 	}

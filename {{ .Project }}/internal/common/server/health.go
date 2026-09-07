@@ -4,6 +4,9 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+{{- if eq .Computed.http_router_final "gin" }}
+	"github.com/gin-gonic/gin"
+{{- end }}
 	"time"
 )
 
@@ -23,7 +26,15 @@ func (*Health) Name() string {
 	return "/healthz"
 }
 
+{{ if eq .Computed.http_router_final "gin" -}}
+func (h *Health) HTTP(r *gin.RouterGroup) {
+	r.GET("", gin.WrapH(h.handler()))
+}
+
+func (h *Health) handler() http.Handler {
+{{ else -}}
 func (h *Health) HTTP() http.Handler {
+{{ end -}}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			WriteError(w, http.StatusMethodNotAllowed, http.StatusText(http.StatusMethodNotAllowed))

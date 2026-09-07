@@ -93,7 +93,7 @@ func New(ctx context.Context, cfg *config.Config) (*Store, func(), error) {
 			logger.Error("close database failed: " + err.Error())
 		}
 	}
-	logger.Info("database initialized: " + redact.DSN(dsn))
+	logger.InfoContext(ctx, "database initialized: "+redact.DSN(dsn))
 	return &Store{DB: db}, cleanup, nil
 }
 

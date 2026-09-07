@@ -23,9 +23,14 @@ func Init(out io.Writer, level string) error {
 	if err := parsed.UnmarshalText([]byte(strings.TrimSpace(level))); err != nil {
 		return fmt.Errorf("parse log level: %w", err)
 	}
-	var handler slog.Handler = slog.NewJSONHandler(out, &slog.HandlerOptions{Level: parsed})
+	var handler slog.Handler = slog.NewJSONHandler(out, &slog.HandlerOptions{
+		Level: parsed, AddSource: true, ReplaceAttr: callerAttribute(),
+	})
 	handler = handler.WithAttrs([]slog.Attr{slog.String(versionKey, config.Version)})
 	slog.SetDefault(slog.New(contextHandler{next: handler}))
+{{- if eq .Computed.http_router_final "gin" }}
+	initGinLogging()
+{{- end }}
 	return nil
 }
 

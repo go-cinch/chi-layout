@@ -17,10 +17,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/knadh/koanf/parsers/yaml"
-	"github.com/knadh/koanf/providers/file"
-	"github.com/knadh/koanf/v2"
 	"github.com/pmezard/go-difflib/difflib"
+	"{{ .Computed.module_name_final }}/internal/common/config"
 )
 
 type sourcePackage struct {
@@ -144,36 +142,15 @@ func run(source, configDir, output, title string) error {
 }
 
 func loadServers(configDir string) ([]docServer, error) {
-	entries, err := os.ReadDir(configDir)
+	values, _, err := config.LoadValues(configDir)
 	if err != nil {
-		return nil, fmt.Errorf("read config directory: %w", err)
+		return nil, err
 	}
-	paths := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		extension := strings.ToLower(filepath.Ext(entry.Name()))
-		if extension == ".yml" || extension == ".yaml" {
-			paths = append(paths, filepath.Join(configDir, entry.Name()))
-		}
-	}
-	sort.Strings(paths)
-	if len(paths) == 0 {
-		return nil, errors.New("no yaml configuration files found")
-	}
-
-	values := koanf.New(".")
-	for _, path := range paths {
-		if err := values.Load(file.Provider(path), yaml.Parser()); err != nil {
-			return nil, fmt.Errorf("load config file %q: %w", path, err)
-		}
-	}
-	var config docsFileConfig
-	if err := values.Unmarshal("", &config); err != nil {
+	var cfg docsFileConfig
+	if err := values.Unmarshal("", &cfg); err != nil {
 		return nil, fmt.Errorf("decode docs configuration: %w", err)
 	}
-	return config.HTTP.Docs.Servers, nil
+	return cfg.HTTP.Docs.Servers, nil
 }
 
 func loadPackages(root string) ([]*sourcePackage, error) {
@@ -271,8 +248,8 @@ func discoverRoutes(packages []*sourcePackage) []route {
 			if httpMethod == nil || httpMethod.Body == nil {
 				continue
 			}
-			found := chiRoutes(pkg, receiver, base, httpMethod)
-			if len(found) == 0 {
+			found := httpRoutes(pkg, receiver, base, httpMethod)
+			if len(found) == 0 && (httpMethod.Type.Params == nil || len(httpMethod.Type.Params.List) == 0) {
 				for _, method := range requestMethods(httpMethod) {
 					found = append(found, route{method: method, path: base, tag: pkg.name, handler: httpMethod, pkg: pkg})
 				}
@@ -287,45 +264,6 @@ func discoverRoutes(packages []*sourcePackage) []route {
 		return routes[left].path < routes[right].path
 	})
 	return routes
-}
-
-func chiRoutes(pkg *sourcePackage, receiver, base string, function *ast.FuncDecl) []route {
-	var routes []route
-	ast.Inspect(function.Body, func(node ast.Node) bool {
-		call, ok := node.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		selector, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || len(call.Args) < 2 {
-			return true
-		}
-		method := routeMethods[selector.Sel.Name]
-		if method == "" {
-			return true
-		}
-		pathValue, ok := stringLiteral(call.Args[0])
-		if !ok {
-			return true
-		}
-		handler := resolveHandler(pkg, receiver, call.Args[1])
-		if handler != nil {
-			routes = append(routes, route{method: method, path: joinPath(base, pathValue), tag: pkg.name, handler: handler, pkg: pkg})
-		}
-		return true
-	})
-	return routes
-}
-
-func resolveHandler(pkg *sourcePackage, receiver string, expression ast.Expr) *ast.FuncDecl {
-	switch value := expression.(type) {
-	case *ast.SelectorExpr:
-		return pkg.funcs[receiver+"."+value.Sel.Name]
-	case *ast.Ident:
-		return pkg.funcs["."+value.Name]
-	default:
-		return nil
-	}
 }
 
 func requestMethods(function *ast.FuncDecl) []string {
@@ -379,6 +317,20 @@ func (g *generator) describeRoute(route *route) {
 			}
 		case "WriteNoContent":
 			route.responses[http.StatusNoContent] = response{description: http.StatusText(http.StatusNoContent)}
+		case "JSON", "PureJSON", "IndentedJSON", "AbortWithStatusJSON":
+			if len(call.Args) >= 2 {
+				status := statusCode(call.Args[0])
+				if status != 0 {
+					route.responses[status] = response{description: http.StatusText(status), schema: g.expressionSchema(route.pkg, route.handler, call.Args[1])}
+				}
+			}
+		case "Status", "AbortWithStatus":
+			if len(call.Args) == 1 {
+				status := statusCode(call.Args[0])
+				if status != 0 {
+					route.responses[status] = response{description: http.StatusText(status)}
+				}
+			}
 		case "WriteJSON":
 			if len(call.Args) >= 3 {
 				status := statusCode(call.Args[1])
@@ -401,7 +353,11 @@ func (g *generator) expressionSchema(pkg *sourcePackage, function *ast.FuncDecl,
 		}
 	}
 	if literal, ok := expression.(*ast.CompositeLit); ok {
-		if _, mapValue := literal.Type.(*ast.MapType); mapValue {
+		_, mapValue := literal.Type.(*ast.MapType)
+		if named, ok := literal.Type.(*ast.SelectorExpr); ok && named.Sel.Name == "H" {
+			mapValue = true
+		}
+		if mapValue {
 			properties := make(map[string]*schema)
 			for _, element := range literal.Elts {
 				pair, ok := element.(*ast.KeyValueExpr)
@@ -422,6 +378,9 @@ func (g *generator) expressionSchema(pkg *sourcePackage, function *ast.FuncDecl,
 
 func inferredIdentifierType(pkg *sourcePackage, function *ast.FuncDecl, name string) ast.Expr {
 	var result ast.Expr
+	if function == nil {
+		return nil
+	}
 	ast.Inspect(function.Body, func(node ast.Node) bool {
 		if result != nil {
 			return false
@@ -631,14 +590,25 @@ func parameterType(function *ast.FuncDecl, name string) schema {
 
 func urlParamName(expression ast.Expr) string {
 	call, ok := expression.(*ast.CallExpr)
-	if !ok || len(call.Args) < 2 {
+	if !ok {
 		return ""
 	}
 	selector, ok := call.Fun.(*ast.SelectorExpr)
-	if !ok || selector.Sel.Name != "URLParam" {
+	if !ok {
 		return ""
 	}
-	value, _ := stringLiteral(call.Args[1])
+	index := 1
+	switch selector.Sel.Name {
+	case "URLParam":
+	case "Param":
+		index = 0
+	default:
+		return ""
+	}
+	if len(call.Args) <= index {
+		return ""
+	}
+	value, _ := stringLiteral(call.Args[index])
 	return value
 }
 

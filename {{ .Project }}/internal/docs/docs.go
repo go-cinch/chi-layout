@@ -1,9 +1,15 @@
 package docs
 
 import (
+	"bytes"
 	"embed"
 	"net/http"
+	"time"
+{{- if eq .Computed.http_router_final "gin" }}
+	"github.com/gin-gonic/gin"
+{{- end }}
 
+	"{{ .Computed.module_name_final }}/internal/common/config"
 	"{{ .Computed.module_name_final }}/internal/common/server"
 	"{{ .Computed.module_name_final }}/internal/modules"
 )
@@ -13,20 +19,41 @@ var files embed.FS
 
 type Module struct {
 	handler http.Handler
+	spec    []byte
 }
 
 var _ modules.Module = (*Module)(nil)
 
-func New() *Module {
+func New(servers []config.HTTPDocsServersItemConfig) (*Module, error) {
+	embedded, err := files.ReadFile("openapi.yaml")
+	if err != nil {
+		return nil, err
+	}
+	spec, err := renderOpenAPI(embedded, servers)
+	if err != nil {
+		return nil, err
+	}
 	fileServer := http.FileServer(http.FS(files))
-	return &Module{handler: http.StripPrefix("/docs/", fileServer)}
+	return &Module{handler: http.StripPrefix("/docs/", fileServer), spec: spec}, nil
 }
 
 func (*Module) Name() string {
 	return "/docs"
 }
 
+{{ if eq .Computed.http_router_final "gin" -}}
+func (m *Module) HTTP(r *gin.RouterGroup) {
+	handler := gin.WrapH(m.handlerHTTP())
+	r.GET("", handler)
+	r.HEAD("", handler)
+	r.GET("/*filepath", handler)
+	r.HEAD("/*filepath", handler)
+}
+
+func (m *Module) handlerHTTP() http.Handler {
+{{ else -}}
 func (m *Module) HTTP() http.Handler {
+{{ end -}}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			server.WriteError(w, http.StatusMethodNotAllowed, http.StatusText(http.StatusMethodNotAllowed))
@@ -34,6 +61,11 @@ func (m *Module) HTTP() http.Handler {
 		}
 		if r.URL.Path == "/docs" {
 			http.Redirect(w, r, "/docs/", http.StatusMovedPermanently)
+			return
+		}
+		if r.URL.Path == "/docs/openapi.yaml" {
+			w.Header().Set("Content-Type", "application/yaml")
+			http.ServeContent(w, r, "openapi.yaml", time.Time{}, bytes.NewReader(m.spec))
 			return
 		}
 		m.handler.ServeHTTP(w, r)

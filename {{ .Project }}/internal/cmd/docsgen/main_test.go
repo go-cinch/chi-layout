@@ -25,7 +25,7 @@ type User struct {
     CreatedAt time.Time `+"`json:\"createdAt\"`"+`
     Name string `+"`json:\"name\"`"+`
 }
-func (*Module) Name() string { return "/users" }
+func (*Module) Name() string { return "/user" }
 func (*Module) Find(context.Context, int64) (*User, error) { return nil, nil }
 `)
 	writeSource(t, root, "modules/user/http.go", `package user
@@ -68,7 +68,7 @@ func (h *Health) HTTP() http.Handler {
 	}
 	generated := string(data)
 	for _, expected := range []string{
-		`title: "Example API"`, `url: "https://example.com/api/example"`, `description: "prod"`, "/healthz:", "/users/{id}:", `operationId: getUsersId`,
+		`title: "Example API"`, `url: "https://example.com/api/example"`, `description: "prod"`, "/healthz:", "/user/{id}:", `operationId: getUserId`,
 		`"400":`, `description: "invalid user id; user id must be positive"`, `"404":`, `description: "user not found"`,
 		"User:", "createdAt:", "format: date-time", "ErrorResponse:",
 	} {
@@ -114,10 +114,10 @@ func TestHelpers(t *testing.T) {
 	if err != nil || statusCode(expression) != 503 {
 		t.Fatalf("status = %d, %v", statusCode(expression), err)
 	}
-	if actual := pathParameters("/teams/{team}/users/{id}"); strings.Join(actual, ",") != "team,id" {
+	if actual := pathParameters("/team/{team}/user/{id}"); strings.Join(actual, ",") != "team,id" {
 		t.Fatalf("parameters = %v", actual)
 	}
-	if operationID("POST", "/users/{id}/password") != "postUsersIdPassword" {
+	if operationID("POST", "/user/{id}/password") != "postUserIdPassword" {
 		t.Fatal("unexpected operation ID")
 	}
 	if primitiveSchema("float64").format != "double" || primitiveSchema("unknown") != nil {
@@ -133,5 +133,37 @@ func writeSource(t *testing.T, root, name, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestOpenAPIGenerationUsesIndexedEnvironment(t *testing.T) {
+	root := t.TempDir()
+	writeSource(t, root, "conf/http.yml", `http:
+  docs:
+    servers:
+      - url: "https://prod.example"
+        description: "prod"
+      - url: "https://dev.example"
+        description: "dev"
+      - url: "http://127.0.0.1:8080"
+        description: "local"
+`)
+	writeSource(t, root, "empty/value.go", "package empty\ntype Value string\n")
+	t.Setenv("SERVICE_HTTP_DOCS_SERVERS_2_URL", "http://127.0.0.1:8083")
+	output := filepath.Join(root, "openapi.yaml")
+	if err := run(root, filepath.Join(root, "conf"), output, "Environment API"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"https://prod.example", "https://dev.example", "http://127.0.0.1:8083", `description: "local"`} {
+		if !strings.Contains(string(data), value) {
+			t.Fatalf("missing %q:\n%s", value, data)
+		}
+	}
+	if strings.Contains(string(data), "http://127.0.0.1:8080") {
+		t.Fatalf("old server URL remained:\n%s", data)
 	}
 }
