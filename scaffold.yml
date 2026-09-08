@@ -4,8 +4,8 @@ messages:
   pre: |
     # Go-Cinch Chi Service Generator
 
-    Generates a small, production-oriented Go HTTP service based on net/http and your choice of chi or gin.
-    Optional infrastructure is selected at scaffold time; no job runner is included.
+    Generates a Go service with chi or Gin HTTP routing and optional gRPC.
+    Optional infrastructure is selected at scaffold time.
 
   post: |
     # Project Created: {{ .Computed.service_name_final }}
@@ -71,10 +71,10 @@ questions:
       type: string
       default: "true"
 
-  - name: enable_user_example
+  - name: enable_game_example
     when: '{{ and .enable_database .enable_migrations }}'
     prompt:
-      message: Include the User HTTP and database example?
+      message: Include the Game HTTP/gRPC CRUD example?
       type: string
       default: "false"
 
@@ -97,11 +97,13 @@ computed:
   service_name_final: '{{ or .Scaffold.service_name .Scaffold.Project }}'
   service_name_kebab: '{{ toKebabCase (or .Scaffold.service_name .Scaffold.Project) }}'
   service_name_snake: '{{ toSnakeCase (or .Scaffold.service_name .Scaffold.Project) }}'
+  proto_service_name_final: '{{ trimAll "-" (toLower (regexReplaceAll "[^A-Za-z0-9]+" (or .Scaffold.service_name .Scaffold.Project) "-")) }}'
+  proto_package_final: '{{ replace "-" "_" (trimAll "-" (toLower (regexReplaceAll "[^A-Za-z0-9]+" (or .Scaffold.service_name .Scaffold.Project) "-"))) }}'
   module_name_final: '{{ or .Scaffold.module_name .Scaffold.service_name .Scaffold.Project }}'
   enable_health_check_final: '{{ eq .Scaffold.enable_health_check "true" }}'
   enable_database_final: '{{ eq .Scaffold.enable_database "true" }}'
   enable_migrations_final: '{{ and (eq .Scaffold.enable_database "true") (eq .Scaffold.enable_migrations "true") }}'
-  enable_user_example_final: '{{ and (eq .Scaffold.enable_database "true") (eq .Scaffold.enable_migrations "true") (eq .Scaffold.enable_user_example "true") }}'
+  enable_game_example_final: '{{ and (eq .Scaffold.enable_database "true") (eq .Scaffold.enable_migrations "true") (eq .Scaffold.enable_game_example "true") }}'
   enable_redis_final: '{{ eq .Scaffold.enable_redis "true" }}'
   enable_trace_final: '{{ eq .Scaffold.enable_trace "true" }}'
   database_driver_final: '{{ or .Scaffold.database_driver "postgres" }}'
@@ -138,14 +140,16 @@ features:
       - "**/internal/infra/db/migrations_embed.go"
       - "**/internal/infra/db/migrate_test.go"
 
-  - value: '{{ and .Computed.enable_migrations_final (not .Computed.enable_user_example_final) }}'
+  - value: '{{ and .Computed.enable_migrations_final (not .Computed.enable_game_example_final) }}'
     globs:
       - "**/internal/infra/db/migrations/YYYYMMDDHH-initial.sql.example"
 
-  - value: '{{ .Computed.enable_user_example_final }}'
+  - value: '{{ .Computed.enable_game_example_final }}'
     globs:
-      - "**/internal/infra/db/migrations/YYYYMMDDHH-user.sql"
-      - "**/internal/modules/user/**"
+      - "**/internal/infra/db/migrations/YYYYMMDDHH-game.sql"
+      - "**/internal/modules/game/**"
+      - "**/api/**"
+      - "**/third_party/google/protobuf/empty.proto"
 
   - value: '{{ .Computed.enable_redis_final }}'
     globs:
@@ -156,6 +160,10 @@ features:
     globs:
       - "**/internal/common/server/trace.go"
       - "**/internal/common/server/trace_test.go"
+      - "**/internal/common/rpc/client_trace.go"
+      - "**/internal/common/rpc/client_trace_test.go"
+      - "**/internal/common/rpc/trace.go"
+      - "**/internal/common/rpc/trace_test.go"
       - "**/internal/common/tracing/**"
       - "**/conf/tracer.yml"
 
@@ -170,7 +178,7 @@ presets:
     enable_database: "false"
     database_driver: "postgres"
     enable_migrations: "false"
-    enable_user_example: "false"
+    enable_game_example: "false"
     enable_redis: "false"
     enable_trace: "true"
 
@@ -184,6 +192,6 @@ presets:
     enable_database: "true"
     database_driver: "postgres"
     enable_migrations: "true"
-    enable_user_example: "true"
+    enable_game_example: "true"
     enable_redis: "true"
     enable_trace: "true"

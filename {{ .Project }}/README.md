@@ -1,6 +1,6 @@
 # {{ .Computed.service_name_final }}
 
-A minimal HTTP service using **{{ .Computed.http_router_final }}**.
+A Go service using **{{ .Computed.http_router_final }}** with optional gRPC.
 
 ## Run
 

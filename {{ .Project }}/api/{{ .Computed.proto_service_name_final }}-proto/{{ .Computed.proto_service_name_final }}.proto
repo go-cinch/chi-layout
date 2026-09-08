@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package {{ .Computed.proto_package_final }}.v1;
+
+import "google/protobuf/empty.proto";
+
+option go_package = "{{ .Computed.module_name_final }}/api/{{ .Computed.proto_service_name_final }};{{ .Computed.proto_package_final }}";
+
+service GameService {
+  rpc ListGames(ListGamesRequest) returns (ListGamesResponse);
+  rpc GetGame(GetGameRequest) returns (Game);
+  rpc CreateGame(CreateGameRequest) returns (Game);
+  rpc UpdateGame(UpdateGameRequest) returns (Game);
+  rpc DeleteGame(DeleteGameRequest) returns (google.protobuf.Empty);
+  rpc BatchDeleteGames(BatchDeleteGamesRequest) returns (google.protobuf.Empty);
+}
+
+message ListGamesRequest {
+  // Case-insensitive substring filter; empty matches all games.
+  string name = 1;
+  // Omitted selects page 1; outside 1..pagination.maxP returns no items.
+  optional int32 p = 2;
+  // Omitted selects min(1, pagination.maxS).
+  // Zero or out-of-range values return no items.
+  optional int32 s = 3;
+}
+
+message ListGamesResponse {
+  repeated Game items = 1;
+  int64 total = 2;
+  int32 p = 3;
+  int32 s = 4;
+}
+
+message GetGameRequest {
+  int64 id = 1;
+}
+
+message CreateGameRequest {
+  string name = 1;
+  string description = 2;
+}
+
+message UpdateGameRequest {
+  int64 id = 1;
+  // Omitted fields stay unchanged; an empty description clears it.
+  optional string name = 2;
+  optional string description = 3;
+}
+
+message BatchDeleteGamesRequest {
+  reserved 1;
+  reserved "id";
+  // 1-100 positive IDs. Duplicate IDs are ignored.
+  repeated int64 ids = 2;
+}
+
+message DeleteGameRequest {
+  int64 id = 1;
+}
+
+message Game {
+  reserved 2, 3;
+
+  int64 id = 1;
+  // Unix milliseconds since 1970-01-01T00:00:00Z.
+  int64 created_at = 6;
+  int64 updated_at = 7;
+  string name = 4;
+  string description = 5;
+}

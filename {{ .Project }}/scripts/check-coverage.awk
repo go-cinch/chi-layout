@@ -1,5 +1,7 @@
 NR == 1 { next }
 
+$1 ~ /\.pb\.go:/ { next }
+
 {
     split($1, location, ":")
     packageName = location[1]

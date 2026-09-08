@@ -2,19 +2,23 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
+{{- if .Computed.enable_trace_final }}
 	"log/slog"
-	"net"
+{{- end }}
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"google.golang.org/grpc"
 	"{{ .Computed.module_name_final }}/internal/common/config"
 	"{{ .Computed.module_name_final }}/internal/common/logging"
+	"{{ .Computed.module_name_final }}/internal/common/pagination"
+	"{{ .Computed.module_name_final }}/internal/common/rpc"
 	"{{ .Computed.module_name_final }}/internal/common/server"
+	"{{ .Computed.module_name_final }}/internal/modules"
 {{- if .Computed.enable_trace_final }}
 	"{{ .Computed.module_name_final }}/internal/common/tracing"
 {{- end }}
@@ -27,8 +31,12 @@ import (
 )
 
 type Application struct {
-	server         *http.Server
-	profilerServer *http.Server
+	pagination      pagination.Limits
+	server          *http.Server
+	profilerServer  *http.Server
+	grpcServer      *grpc.Server
+	grpcAddr        string
+	shutdownTimeout time.Duration
 {{- if .Computed.enable_database_final }}
 	db *db.Store
 {{- end }}
@@ -36,11 +44,6 @@ type Application struct {
 	rds rds.Client
 {{- end }}
 	cleanups []func()
-}
-
-type serverResult struct {
-	name string
-	err  error
 }
 
 func New(ctx context.Context, confPath string) (*Application, error) {
@@ -53,13 +56,16 @@ func New(ctx context.Context, confPath string) (*Application, error) {
 		return nil, err
 	}
 	config.LogOverrides(overrides)
+	limits, err := pagination.New(cfg.Pagination.MaxP, cfg.Pagination.MaxS)
+	if err != nil {
+		return nil, err
+	}
 	cleanups := make([]func(), 0, 3)
 	cleanup := func() {
 		for index := len(cleanups) - 1; index >= 0; index-- {
 			cleanups[index]()
 		}
 	}
-
 {{- if .Computed.enable_trace_final }}
 	if cfg.Tracer.Enabled {
 		provider, err := tracing.NewProvider(ctx, cfg)
@@ -93,6 +99,7 @@ func New(ctx context.Context, confPath string) (*Application, error) {
 {{- end }}
 
 	application := &Application{
+		pagination: limits,
 {{- if .Computed.enable_database_final }}
 		db: dbStore,
 {{- end }}
@@ -101,25 +108,10 @@ func New(ctx context.Context, confPath string) (*Application, error) {
 {{- end }}
 		cleanups: cleanups,
 	}
-	handler, err := application.NewRouter(cfg)
-	if err != nil {
+	httpModules, grpcModules := application.generatedModules()
+	if err := application.configureTransports(cfg, httpModules, grpcModules); err != nil {
 		cleanup()
-		return nil, fmt.Errorf("initialize http router: %w", err)
-	}
-
-	application.server = &http.Server{
-		Addr:              cfg.HTTP.Addr,
-		Handler:           handler,
-		ReadHeaderTimeout: cfg.HTTP.ReadHeaderTimeout,
-		IdleTimeout:       cfg.HTTP.IdleTimeout,
-	}
-	if cfg.HTTP.Profiler.Enabled {
-		application.profilerServer = &http.Server{
-			Addr:              cfg.HTTP.Profiler.Addr,
-			Handler:           server.NewProfilerHandler(),
-			ReadHeaderTimeout: cfg.HTTP.ReadHeaderTimeout,
-			IdleTimeout:       cfg.HTTP.IdleTimeout,
-		}
+		return nil, err
 	}
 	return application, nil
 }
@@ -128,75 +120,38 @@ func SignalContext() (context.Context, context.CancelFunc) {
 	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 }
 
-func (a *Application) Run(ctx context.Context) error {
-	if ctx.Err() != nil {
-		return nil
-	}
-	httpAddress := a.server.Addr
-	if httpAddress == "" {
-		httpAddress = ":http"
-	}
-	httpListener, err := net.Listen("tcp", httpAddress)
-	if err != nil {
-		return fmt.Errorf("listen http server: %w", err)
-	}
-	var profilerListener net.Listener
-	if a.profilerServer != nil {
-		profilerAddress := a.profilerServer.Addr
-		if profilerAddress == "" {
-			profilerAddress = ":http"
-		}
-		profilerListener, err = net.Listen("tcp", profilerAddress)
-		if err != nil {
-			_ = httpListener.Close()
-			return fmt.Errorf("listen profiler server: %w", err)
-		}
-	}
-
-	errCh := make(chan serverResult, 2)
-	slog.InfoContext(ctx, "http server running at "+a.server.Addr)
-	go func() {
-		errCh <- serverResult{name: "http", err: a.server.Serve(httpListener)}
-	}()
-	if a.profilerServer != nil {
-		slog.InfoContext(ctx, "profiler server running at "+a.profilerServer.Addr)
-		go func() {
-			errCh <- serverResult{name: "profiler", err: a.profilerServer.Serve(profilerListener)}
-		}()
-	}
-
-	select {
-	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		var shutdownErr error
-		if err := a.server.Shutdown(shutdownCtx); err != nil {
-			shutdownErr = errors.Join(shutdownErr, err, a.server.Close())
-		}
-		if a.profilerServer != nil {
-			if err := a.profilerServer.Shutdown(shutdownCtx); err != nil {
-				shutdownErr = errors.Join(shutdownErr, err, a.profilerServer.Close())
-			}
-		}
-		if shutdownErr != nil {
-			return shutdownErr
-		}
-		slog.InfoContext(ctx, "http server stopped")
-		return nil
-	case result := <-errCh:
-		if result.err != nil && !errors.Is(result.err, http.ErrServerClosed) {
-			_ = a.server.Close()
-			if a.profilerServer != nil {
-				_ = a.profilerServer.Close()
-			}
-			return fmt.Errorf("%s server: %w", result.name, result.err)
-		}
-		return nil
-	}
-}
-
 func (a *Application) Close() {
 	for index := len(a.cleanups) - 1; index >= 0; index-- {
 		a.cleanups[index]()
 	}
+}
+
+func (a *Application) configureTransports(cfg *config.Config, httpModules []modules.HTTPModule, grpcModules []modules.GRPCModule) error {
+	// Start HTTP for HTTP modules or an empty scaffold; helpers do not enable it.
+	if len(httpModules) > 0 || len(grpcModules) == 0 {
+		handler, err := a.newRouter(cfg, httpModules)
+		if err != nil {
+			return fmt.Errorf("initialize http router: %w", err)
+		}
+		a.server = &http.Server{Addr: cfg.HTTP.Addr, Handler: handler, ReadHeaderTimeout: cfg.HTTP.ReadHeaderTimeout, IdleTimeout: cfg.HTTP.IdleTimeout}
+	}
+	if len(grpcModules) > 0 {
+		var err error
+		a.grpcServer, err = rpc.NewServer(cfg, grpcModules...)
+		if err != nil {
+			return fmt.Errorf("initialize grpc server: %w", err)
+		}
+		a.grpcAddr = cfg.GRPC.Addr
+	}
+	a.shutdownTimeout = cfg.GRPC.ShutdownTimeout
+	if cfg.HTTP.Profiler.Enabled {
+		a.profilerServer = &http.Server{
+			Addr:              cfg.HTTP.Profiler.Addr,
+			Handler:           server.NewProfilerHandler(),
+			ReadHeaderTimeout: cfg.HTTP.ReadHeaderTimeout,
+			IdleTimeout:       cfg.HTTP.IdleTimeout,
+		}
+	}
+
+	return nil
 }

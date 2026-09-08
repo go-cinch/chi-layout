@@ -2,7 +2,7 @@ FROM golang:1.27.1-alpine3.23 AS builder
 
 ENV CGO_ENABLED=0
 
-RUN apk add --no-cache ca-certificates git make
+RUN apk add --no-cache ca-certificates git make protobuf
 
 WORKDIR /src
 
@@ -23,8 +23,6 @@ COPY --from=builder /src/bin/{{ .Computed.service_name_kebab }} /app/{{ .Compute
 COPY conf /app/conf
 
 USER app
-
-EXPOSE {{ .Scaffold.http_port }}
 
 ENTRYPOINT ["/app/{{ .Computed.service_name_kebab }}"]
 CMD ["-c", "/app/conf"]

@@ -1,19 +1,27 @@
-{{ if eq .Computed.http_router_final "gin" -}}
 package modules
 
-import "github.com/gin-gonic/gin"
+import (
+{{- if eq .Computed.http_router_final "gin" }}
+ "github.com/gin-gonic/gin"
+{{- else }}
+ "net/http"
+{{- end }}
+ "google.golang.org/grpc"
+)
 
-type Module interface {
-	Name() string
-	HTTP(*gin.RouterGroup)
+type HTTPModule interface {
+ Name() string
+{{- if eq .Computed.http_router_final "gin" }}
+ HTTP(*gin.RouterGroup)
+{{- else }}
+ HTTP() http.Handler
+{{- end }}
 }
-{{ else -}}
-package modules
 
-import "net/http"
+// Module aliases HTTPModule.
+type Module = HTTPModule
 
-type Module interface {
-	Name() string
-	HTTP() http.Handler
+// GRPCModule exposes RPC services without requiring an HTTP route or Name.
+type GRPCModule interface {
+ GRPC(grpc.ServiceRegistrar)
 }
-{{ end -}}

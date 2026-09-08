@@ -19,6 +19,7 @@ import (
 
 	"github.com/pmezard/go-difflib/difflib"
 	"{{ .Computed.module_name_final }}/internal/common/config"
+	"{{ .Computed.module_name_final }}/internal/common/pagination"
 )
 
 type sourcePackage struct {
@@ -30,13 +31,14 @@ type sourcePackage struct {
 }
 
 type route struct {
-	method     string
-	path       string
-	tag        string
-	handler    *ast.FuncDecl
-	pkg        *sourcePackage
-	responses  map[int]response
-	parameters []parameter
+	method      string
+	path        string
+	tag         string
+	handler     *ast.FuncDecl
+	pkg         *sourcePackage
+	responses   map[int]response
+	parameters  []parameter
+	requestBody *schema
 }
 
 type response struct {
@@ -45,8 +47,10 @@ type response struct {
 }
 
 type parameter struct {
-	name   string
-	schema schema
+	in       string
+	required bool
+	name     string
+	schema   schema
 }
 
 type docServer struct {
@@ -55,6 +59,10 @@ type docServer struct {
 }
 
 type docsFileConfig struct {
+	Pagination struct {
+		MaxP int `koanf:"maxP"`
+		MaxS int `koanf:"maxS"`
+	} `koanf:"pagination"`
 	HTTP docsHTTPConfig `koanf:"http"`
 }
 
@@ -67,6 +75,9 @@ type docsConfig struct {
 }
 
 type schema struct {
+	paginationKey        string
+	paginationMax        int64
+	defaultValue         *int64
 	ref                  string
 	typeName             string
 	format               string
@@ -78,6 +89,7 @@ type schema struct {
 }
 
 type generator struct {
+	limits     pagination.Limits
 	components map[string]*schema
 	visiting   map[string]bool
 }
@@ -121,7 +133,7 @@ func main() {
 }
 
 func run(source, configDir, output, title string) error {
-	servers, err := loadServers(configDir)
+	servers, limits, err := loadSettings(configDir)
 	if err != nil {
 		return err
 	}
@@ -130,7 +142,7 @@ func run(source, configDir, output, title string) error {
 		return err
 	}
 	routes := discoverRoutes(packages)
-	gen := &generator{components: make(map[string]*schema), visiting: make(map[string]bool)}
+	gen := &generator{limits: limits, components: make(map[string]*schema), visiting: make(map[string]bool)}
 	for index := range routes {
 		gen.describeRoute(&routes[index])
 	}
@@ -141,16 +153,17 @@ func run(source, configDir, output, title string) error {
 	return writeAtomic(output, data)
 }
 
-func loadServers(configDir string) ([]docServer, error) {
+func loadSettings(configDir string) ([]docServer, pagination.Limits, error) {
 	values, _, err := config.LoadValues(configDir)
 	if err != nil {
-		return nil, err
+		return nil, pagination.Limits{}, err
 	}
 	var cfg docsFileConfig
 	if err := values.Unmarshal("", &cfg); err != nil {
-		return nil, fmt.Errorf("decode docs configuration: %w", err)
+		return nil, pagination.Limits{}, fmt.Errorf("decode docs configuration: %w", err)
 	}
-	return cfg.HTTP.Docs.Servers, nil
+	limits, err := pagination.New(cfg.Pagination.MaxP, cfg.Pagination.MaxS)
+	return cfg.HTTP.Docs.Servers, limits, err
 }
 
 func loadPackages(root string) ([]*sourcePackage, error) {
@@ -291,6 +304,7 @@ func requestMethods(function *ast.FuncDecl) []string {
 
 func (g *generator) describeRoute(route *route) {
 	route.responses = make(map[int]response)
+	route.requestBody = g.requestSchema(route.pkg, route.handler)
 	ast.Inspect(route.handler.Body, func(node ast.Node) bool {
 		call, ok := node.(*ast.CallExpr)
 		if !ok {
@@ -310,7 +324,11 @@ func (g *generator) describeRoute(route *route) {
 					g.ensureErrorResponse()
 					description := errorDescription(route.pkg, call.Args[2], status)
 					if previous := route.responses[status].description; previous != "" && previous != description {
-						description = previous + "; " + description
+						if strings.Contains("; "+previous+"; ", "; "+description+"; ") {
+							description = previous
+						} else {
+							description = previous + "; " + description
+						}
 					}
 					route.responses[status] = response{description: description, schema: &schema{ref: "#/components/schemas/ErrorResponse"}}
 				}
@@ -342,8 +360,9 @@ func (g *generator) describeRoute(route *route) {
 		return true
 	})
 	for _, name := range pathParameters(route.path) {
-		route.parameters = append(route.parameters, parameter{name: name, schema: parameterType(route.handler, name)})
+		route.parameters = append(route.parameters, parameter{name: name, in: "path", required: true, schema: parameterType(route.handler, name)})
 	}
+	route.parameters = append(route.parameters, queryParameters(route.handler, g.limits)...)
 }
 
 func (g *generator) expressionSchema(pkg *sourcePackage, function *ast.FuncDecl, expression ast.Expr) *schema {
@@ -529,6 +548,10 @@ func (g *generator) structSchema(pkg *sourcePackage, value *ast.StructType) *sch
 			optional = strings.Contains(reflect.StructTag(tag).Get("json"), "omitempty")
 		}
 		properties[name] = g.typeSchema(pkg, field.Type)
+		if field.Tag != nil {
+			tag, _ := strconv.Unquote(field.Tag.Value)
+			properties[name].example = reflect.StructTag(tag).Get("example")
+		}
 		if !optional {
 			required = append(required, name)
 		}
@@ -575,6 +598,11 @@ func parameterType(function *ast.FuncDecl, name string) schema {
 		call, ok := node.(*ast.CallExpr)
 		if !ok {
 			return true
+		}
+		if functionName(call.Fun) == "Split" && len(call.Args) == 2 && urlParamName(call.Args[0]) == name {
+			if delimiter, ok := stringLiteral(call.Args[1]); ok && delimiter == "," {
+				result = schema{typeName: "string", example: "1,2,3"}
+			}
 		}
 		selector, ok := call.Fun.(*ast.SelectorExpr)
 		if !ok || (selector.Sel.Name != "ParseInt" && selector.Sel.Name != "Atoi") || len(call.Args) == 0 {
@@ -701,9 +729,17 @@ func render(title string, servers []docServer, routes []route, components map[st
 			for _, parameter := range item.parameters {
 				output.WriteString("        - name: ")
 				output.WriteString(parameter.name)
-				output.WriteString("\n          in: path\n          required: true\n          schema:\n")
+				location := parameter.in
+				if location == "" {
+					location = "path"
+				}
+				fmt.Fprintf(&output, "\n          in: %s\n          required: %t\n          schema:\n", location, parameter.required || location == "path")
 				renderSchema(&output, &parameter.schema, 12)
 			}
+		}
+		if item.requestBody != nil {
+			output.WriteString("      requestBody:\n        required: true\n        content:\n          application/json:\n            schema:\n")
+			renderSchema(&output, item.requestBody, 14)
 		}
 		output.WriteString("      responses:")
 		statuses := sortedStatuses(item.responses)
@@ -744,8 +780,15 @@ func renderSchema(output *strings.Builder, value *schema, indent int) {
 	if value.format != "" {
 		output.WriteString(spaces + "format: " + value.format + "\n")
 	}
+	if value.paginationKey != "" {
+		fmt.Fprintf(output, "%sx-pagination: %s\n", spaces, value.paginationKey)
+		fmt.Fprintf(output, "%sdescription: %q\n", spaces, fmt.Sprintf("Values outside 1..%d return an empty list.", value.paginationMax))
+	}
+	if value.defaultValue != nil {
+		fmt.Fprintf(output, "%sdefault: %d\n", spaces, *value.defaultValue)
+	}
 	if value.example != "" {
-		output.WriteString(spaces + "example: " + strconv.Quote(value.example) + "\n")
+		output.WriteString(spaces + "example: " + schemaExample(value) + "\n")
 	}
 	if value.items != nil {
 		output.WriteString(spaces + "items:\n")

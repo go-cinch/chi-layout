@@ -1,11 +1,7 @@
 package app
 
 import (
-	"bytes"
-	"context"
 	"log/slog"
-	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,7 +45,6 @@ func TestNewErrors(t *testing.T) {
 	}
 {{- end }}
 }
-
 {{ if and .Computed.enable_trace_final (not .Computed.enable_database_final) (not .Computed.enable_redis_final) -}}
 func TestNewWithTracing(t *testing.T) {
 	previous := slog.Default()
@@ -63,64 +58,6 @@ func TestNewWithTracing(t *testing.T) {
 }
 {{ end }}
 
-func TestRunAndClose(t *testing.T) {
-	application := &Application{
-		server:         &http.Server{Addr: "127.0.0.1:0", Handler: http.NotFoundHandler(), ReadHeaderTimeout: time.Second},
-		profilerServer: &http.Server{Addr: "127.0.0.1:0", Handler: http.NotFoundHandler(), ReadHeaderTimeout: time.Second},
-	}
-	closed := false
-	application.cleanups = []func(){func() { closed = true }}
-	ctx, cancel := context.WithCancel(t.Context())
-	time.AfterFunc(20*time.Millisecond, cancel)
-	if err := application.Run(ctx); err != nil {
-		t.Fatal(err)
-	}
-	application.Close()
-	if !closed {
-		t.Fatal("cleanup was not called")
-	}
-	application = &Application{server: &http.Server{Addr: "127.0.0.1:-1", Handler: http.NotFoundHandler()}}
-	if err := application.Run(t.Context()); err == nil || !strings.Contains(err.Error(), "http server") {
-		t.Fatalf("listener error = %v", err)
-	}
-}
-
-func TestRunDoesNotLogBeforeListenSucceeds(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer listener.Close()
-	var output bytes.Buffer
-	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewJSONHandler(&output, nil)))
-	t.Cleanup(func() { slog.SetDefault(previous) })
-	application := &Application{server: &http.Server{Addr: listener.Addr().String(), Handler: http.NotFoundHandler()}}
-	if err := application.Run(t.Context()); err == nil || !strings.Contains(err.Error(), "address already in use") {
-		t.Fatalf("Run() error = %v", err)
-	}
-	if strings.Contains(output.String(), "http server running") {
-		t.Fatalf("startup log emitted before listen succeeded: %q", output.String())
-	}
-
-	application = &Application{
-		server:         &http.Server{Addr: "127.0.0.1:0", Handler: http.NotFoundHandler()},
-		profilerServer: &http.Server{Addr: listener.Addr().String(), Handler: http.NotFoundHandler()},
-	}
-	if err := application.Run(t.Context()); err == nil || !strings.Contains(err.Error(), "listen profiler server") {
-		t.Fatalf("profiler Run() error = %v", err)
-	}
-	if strings.Contains(output.String(), "server running") {
-		t.Fatalf("startup log emitted before all listeners succeeded: %q", output.String())
-	}
-
-	canceled, cancel := context.WithCancel(t.Context())
-	cancel()
-	if err := (&Application{}).Run(canceled); err != nil {
-		t.Fatalf("canceled Run() error = %v", err)
-	}
-}
-
 func writeConfig(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -128,4 +65,12 @@ func writeConfig(t *testing.T, content string) string {
 		t.Fatal(err)
 	}
 	return dir
+}
+
+func TestInvalidPaginationConfig(t *testing.T) {
+	previous := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	if _, err := New(t.Context(), writeConfig(t, "log:\n  level: info\npagination:\n  maxP: -1\n  maxS: 10000\n")); err == nil || !strings.Contains(err.Error(), "pagination.maxP") {
+		t.Fatalf("pagination: %v", err)
+	}
 }

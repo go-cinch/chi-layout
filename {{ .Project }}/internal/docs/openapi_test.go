@@ -10,6 +10,7 @@ import (
 
 	"github.com/knadh/koanf/parsers/yaml"
 	"{{ .Computed.module_name_final }}/internal/common/config"
+	"{{ .Computed.module_name_final }}/internal/common/pagination"
 	"{{ .Computed.module_name_final }}/internal/common/server"
 )
 
@@ -82,5 +83,38 @@ func TestOpenAPIServersUseRuntimeEnvironment(t *testing.T) {
 	}
 	if _, err := renderOpenAPI([]byte("openapi: ["), nil); err == nil {
 		t.Fatal("malformed document accepted")
+	}
+}
+
+func TestRuntimePagination(t *testing.T) {
+	document := []byte(`openapi: 3.0.3
+paths:
+  /resource:
+    get:
+      parameters:
+        - name: p
+          in: query
+          schema: {type: integer, x-pagination: p, description: "Values outside 1..10000 return an empty list.", default: 1}
+        - name: s
+          in: query
+          schema: {type: integer, x-pagination: s, description: "Values outside 1..10000 return an empty list.", default: 1}
+`)
+	limits, err := pagination.New(3, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := renderOpenAPI(document, nil, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := yaml.Parser().Unmarshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parameters := parsed["paths"].(map[string]any)["/resource"].(map[string]any)["get"].(map[string]any)["parameters"].([]any)
+	p := parameters[0].(map[string]any)["schema"].(map[string]any)
+	s := parameters[1].(map[string]any)["schema"].(map[string]any)
+	if p["maximum"] != nil || s["maximum"] != nil || p["description"] != "Values outside 1..3 return an empty list." || s["description"] != "Values outside 1..5 return an empty list." || s["default"] != 1 {
+		t.Fatalf("runtime pagination: %s", data)
 	}
 }

@@ -44,6 +44,14 @@ for router in chi gin; do
       --output-dir="$output_dir" --run-hooks=never --no-prompt \
       --preset="$preset" "Project=$project" "module_name=example.com/$project" "$@"
     validate_project "$output_dir/$project" "$router"
+    if [ "$preset" = default ]; then
+      test ! -e "$output_dir/$project/.tools/protoc-gen-go"
+    else
+      test -f "$output_dir/$project/api/$project-proto/$project.proto"
+      test ! -f "$output_dir/$project/api/$project-proto/$project.pb.go"
+      test -f "$output_dir/$project/api/$project/$project.pb.go"
+      test -f "$output_dir/$project/api/$project/${project}_grpc.pb.go"
+    fi
   done
 
   project="$router-mysql"
@@ -75,6 +83,39 @@ for router in chi gin; do
   test -f "$output_dir/$project/internal/common/config/config.gen.go"
   test -f "$output_dir/$project/internal/app/modules.gen.go"
   test -x "$output_dir/$project/bin/$project"
+done
+
+# Exercise removal of either transport from a full generated module. Keep only
+# generated files under management; developers' adapter files are never deleted by gen.
+for transport in http grpc; do
+  project="only-$transport"
+  output_dir="$tmp_dir/$project"
+  mkdir -p "$output_dir"
+  scaffold new "$template_dir" --output-dir="$output_dir" --run-hooks=never --no-prompt --preset=full "Project=$project"
+  generated="$output_dir/$project"
+  (
+    cd "$generated"
+    make gen
+    if [ "$transport" = grpc ]; then
+      rm internal/modules/game/http.go internal/modules/game/http_test.go
+    else
+      rm internal/modules/game/grpc.go internal/modules/game/grpc_test.go api/$project-proto/$project.proto
+    fi
+    make gen
+    gofmt -w .
+    go mod tidy
+    if [ "$transport" = grpc ]; then
+      ! rg -q 'httpModules = append' internal/app/modules.gen.go
+      rg -q 'grpcModules = append' internal/app/modules.gen.go
+      ! rg -q '/game/\{id\}' internal/docs/openapi.yaml
+    else
+      ! rg -q 'grpcModules = append' internal/app/modules.gen.go
+      test ! -f api/$project/$project.pb.go
+      test ! -f api/$project/${project}_grpc.pb.go
+    fi
+    go test -race ./internal/modules/... ./internal/common/rpc ./internal/cmd/modulegen
+    go build ./...
+  )
 done
 
 printf 'Checking invalid router values...\n'

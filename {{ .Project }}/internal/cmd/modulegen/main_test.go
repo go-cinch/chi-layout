@@ -90,3 +90,40 @@ func writeTestFile(t *testing.T, root, name, content string) string {
 	}
 	return path
 }
+
+func TestTransportCapabilities(t *testing.T) {
+	root := t.TempDir()
+	goMod := writeTestFile(t, root, "go.mod", "module example.com/service\n")
+	app := writeTestFile(t, root, "internal/app/app.go", "package app\ntype Application struct{}\n")
+	modulesDir := filepath.Join(root, "internal/modules")
+	writeTestFile(t, root, "internal/modules/module.go", "package modules\n")
+	for _, item := range []struct{ name, assertions string }{
+		{"web", "var _ modules.HTTPModule = (*Module)(nil)"},
+		{"rpc", "var _ modules.GRPCModule = (*Module)(nil)"},
+		{"both", "var _ modules.HTTPModule = (*Module)(nil)\nvar _ modules.GRPCModule = (*Module)(nil)"},
+	} {
+		writeTestFile(t, root, "internal/modules/"+item.name+"/module.go", "package "+item.name+"\nimport \"example.com/service/internal/modules\"\ntype Module struct{}\n"+item.assertions+"\nfunc New()*Module{return &Module{}}\n")
+	}
+	output := filepath.Join(root, "modules.gen.go")
+	if err := run(modulesDir, app, goMod, output); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if strings.Count(text, "both.New()") != 1 || strings.Count(text, "httpModules = append") != 2 || strings.Count(text, "grpcModules = append") != 2 {
+		t.Fatalf("registry: %s", text)
+	}
+	if err := os.RemoveAll(filepath.Join(modulesDir, "rpc")); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(modulesDir, app, goMod, output); err != nil {
+		t.Fatal(err)
+	}
+	data, _ = os.ReadFile(output)
+	if strings.Contains(string(data), "rpc.New()") {
+		t.Fatalf("stale registration: %s", data)
+	}
+}

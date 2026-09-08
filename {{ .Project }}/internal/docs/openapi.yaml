@@ -11,8 +11,206 @@ servers:
     description: "dev"
   - url: "http://127.0.0.1:{{ .Scaffold.http_port }}"
     description: "local"
-{{ if or .Computed.enable_health_check_final .Computed.enable_user_example_final -}}
+{{ if or .Computed.enable_health_check_final .Computed.enable_game_example_final -}}
 paths:
+{{- if .Computed.enable_game_example_final }}
+  /game:
+    get:
+      summary: "GET /game"
+      operationId: getGame
+      tags: ["Game"]
+      parameters:
+        - name: name
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: p
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            x-pagination: p
+            description: "Values outside 1..10000 return an empty list."
+            default: 1
+        - name: s
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            x-pagination: s
+            description: "Values outside 1..10000 return an empty list."
+            default: 1
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListResult"
+        "400":
+          description: "invalid query parameters; p must be one int32 value; s must be one int32 value"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: "internal server error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      summary: "POST /game"
+      operationId: postGame
+      tags: ["Game"]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Input"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Game"
+        "400":
+          description: "invalid request body; invalid game: positive id and name of 1-100 characters required"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: "game not found"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: "internal server error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+{{- end }}
+{{- if .Computed.enable_game_example_final }}
+  /game/{id}:
+    delete:
+      summary: "DELETE /game/{id}"
+      operationId: deleteGameId
+      tags: ["Game"]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            example: "1,2,3"
+      responses:
+        "200":
+          description: "OK"
+        "400":
+          description: "provide 1-100 positive game ids"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: "game not found"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: "internal server error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    get:
+      summary: "GET /game/{id}"
+      operationId: getGameId
+      tags: ["Game"]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Game"
+        "400":
+          description: "invalid game id; invalid game: positive id and name of 1-100 characters required"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: "game not found"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: "internal server error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      summary: "PATCH /game/{id}"
+      operationId: patchGameId
+      tags: ["Game"]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateInput"
+      responses:
+        "200":
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Game"
+        "400":
+          description: "invalid game id; invalid request body; invalid game: positive id and name of 1-100 characters required"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: "game not found"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: "internal server error"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+{{- end }}
 {{- if .Computed.enable_health_check_final }}
   /healthz:
     get:
@@ -35,49 +233,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 {{- end }}
-{{- if .Computed.enable_user_example_final }}
-  /user/{id}:
-    get:
-      summary: "GET /user/{id}"
-      operationId: getUserId
-      tags: ["User"]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int64
-      responses:
-        "200":
-          description: "OK"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/User"
-        "400":
-          description: "invalid user id"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: "user not found"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "500":
-          description: "Internal Server Error"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-{{- end }}
 {{ else -}}
 paths: {}
 {{ end -}}
-{{ if or .Computed.enable_health_check_final .Computed.enable_user_example_final -}}
+{{ if or .Computed.enable_health_check_final .Computed.enable_game_example_final -}}
 components:
   schemas:
     ErrorResponse:
@@ -86,15 +245,15 @@ components:
       properties:
         msg:
           type: string
-{{- if .Computed.enable_user_example_final }}
-    User:
+{{- if .Computed.enable_game_example_final }}
+    Game:
       type: object
-      required: [createdAt, email, id, name, updatedAt]
+      required: [createdAt, description, id, name, updatedAt]
       properties:
         createdAt:
-          type: string
-          format: date-time
-        email:
+          type: integer
+          format: int64
+        description:
           type: string
         id:
           type: integer
@@ -102,7 +261,49 @@ components:
         name:
           type: string
         updatedAt:
+          type: integer
+          format: int64
+{{- end }}
+{{- if .Computed.enable_game_example_final }}
+    Input:
+      type: object
+      required: [description, name]
+      properties:
+        description:
           type: string
-          format: date-time
+          example: "A simple game"
+        name:
+          type: string
+          example: "Demo Game"
+{{- end }}
+{{- if .Computed.enable_game_example_final }}
+    ListResult:
+      type: object
+      required: [items, p, s, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Game"
+        p:
+          type: integer
+          format: int32
+        s:
+          type: integer
+          format: int32
+        total:
+          type: integer
+          format: int64
+{{- end }}
+{{- if .Computed.enable_game_example_final }}
+    UpdateInput:
+      type: object
+      properties:
+        description:
+          type: string
+          example: "Updated description"
+        name:
+          type: string
+          example: "Updated Game"
 {{- end }}
 {{ end -}}

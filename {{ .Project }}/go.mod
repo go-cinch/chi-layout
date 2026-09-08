@@ -3,6 +3,8 @@ module {{ .Computed.module_name_final }}
 go 1.27.1
 
 require (
+	google.golang.org/grpc v1.83.2
+	google.golang.org/protobuf v1.36.12
 {{- if eq .Computed.http_router_final "gin" }}
 	github.com/gin-gonic/gin v1.12.0
 {{- else }}
@@ -13,6 +15,9 @@ require (
 	github.com/knadh/koanf/v2 v2.3.5
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/twpayne/go-jsonstruct/v3 v3.3.0
+{{- if .Computed.enable_game_example_final }}
+ github.com/DATA-DOG/go-sqlmock v1.5.2
+{{- end }}
 {{- if .Computed.enable_database_final }}
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/lib/pq v1.12.3

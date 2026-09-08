@@ -9,9 +9,7 @@ A minimal, configurable Go HTTP service scaffold built on `net/http`, with
 | Preset | Included |
 | --- | --- |
 | `default` | HTTP server, selected router, health check, JSON logging, tracing and pprof |
-| `full` | Everything in `default`, plus PostgreSQL/MySQL, SQL migrations, Redis and a User HTTP/database example |
-
-Neither preset includes jobs or schedulers.
+| `full` | Everything in `default`, plus PostgreSQL/MySQL, SQL migrations, Redis and a Game HTTP/gRPC CRUD example |
 
 ## Generate with Make
 
@@ -59,7 +57,7 @@ scaffold new https://github.com/go-cinch/chi-layout \
 ```
 
 Replace `default` with `full` to include the database, migrations, Redis and
-the User example.
+the Game example.
 Pass `http_router=gin` to `scaffold new` to select Gin, or choose it interactively.
 Interactive generation can also adjust the HTTP port, timeout, database driver
 and individual features.
@@ -74,21 +72,20 @@ make test
 make run
 ```
 
-Configuration is defined in `conf/*.yml`. After changing YAML fields, run
-`make config` to regenerate `internal/common/config/config.gen.go`.
+Configuration is defined in `conf/*.yml`. Run `make config` when fields or types
+change; configuration values are loaded at startup.
 
-Business modules implement `Name()` and the selected router's HTTP contract, expose a `New` constructor,
-and add a compile-time `modules.Module` assertion. Run `make api` to regenerate
-the module registry and OpenAPI document. Run `make gen` to execute both
-`make config` and `make api`. The build, test, lint and run targets execute
-`make gen` automatically.
+HTTP modules implement `modules.HTTPModule`; gRPC modules implement
+`modules.GRPCModule`. Each provides a `New` constructor and a compile-time
+interface assertion. `make gen` generates configuration, Proto bindings, module
+registrations and OpenAPI. Build, test, lint and run targets invoke it automatically.
 
 ## Module Routing
 
 Chi modules expose `HTTP() http.Handler` and construct a chi subrouter. Gin
 modules implement `HTTP(r *gin.RouterGroup)` and register relative routes on the
 provided group. The application creates one engine and adds the `Name()` prefix.
-Business resource paths use singular nouns: the `user` module returns `/user`
+Business resource paths use singular nouns: the `game` module returns `/game`
 from `Name()`, including for collection routes.
 Business operations continue to accept `context.Context`; Gin handlers pass
 `c.Request.Context()` and use the shared JSON helpers with `c.Writer`.

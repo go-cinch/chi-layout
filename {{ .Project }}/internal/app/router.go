@@ -9,12 +9,15 @@ import (
 	"{{ .Computed.module_name_final }}/internal/common/config"
 	"{{ .Computed.module_name_final }}/internal/common/server"
 	"{{ .Computed.module_name_final }}/internal/docs"
-{{- if .Computed.enable_health_check_final }}
 	"{{ .Computed.module_name_final }}/internal/modules"
-{{- end }}
 )
 
 func (a *Application) NewRouter(cfg *config.Config) (http.Handler, error) {
+	mounted, _ := a.generatedModules()
+	return a.newRouter(cfg, mounted)
+}
+
+func (a *Application) newRouter(cfg *config.Config, mounted []modules.HTTPModule) (http.Handler, error) {
 {{- if .Computed.enable_health_check_final }}
 	healthChecks := make([]server.HealthCheck, 0, 2)
 {{- if .Computed.enable_database_final }}
@@ -26,13 +29,11 @@ func (a *Application) NewRouter(cfg *config.Config) (http.Handler, error) {
 	})
 {{- end }}
 {{- end }}
-
-	mounted := a.generatedModules()
 {{- if .Computed.enable_health_check_final }}
 	mounted = append([]modules.Module{server.NewHealth(healthChecks...)}, mounted...)
 {{- end }}
 	if cfg.HTTP.Docs.Enabled {
-		documentation, err := docs.New(cfg.HTTP.Docs.Servers)
+		documentation, err := docs.New(cfg.HTTP.Docs.Servers, a.pagination)
 		if err != nil {
 			return nil, err
 		}
