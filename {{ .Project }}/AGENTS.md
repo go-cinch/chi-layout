@@ -44,7 +44,7 @@
 
 ## gRPC
 
-- Store Proto contracts in `api/<service>-proto/`, with `<service>.proto` as the service entry file; generate Go bindings into `api/<service>/`. Keep field numbers stable and reserve removed fields.
+- Store Proto contracts in `api/<service>-proto/`, with `<service>.proto` as the service entry file; generate Go bindings into `api/<service>/`. For published contracts, keep field numbers stable and reserve removed fields.
 - Format Proto files with two-space indentation and a blank line between top-level definitions; see the [Proto style guide](https://protobuf.dev/programming-guides/style/).
 - Use service-specific Proto packages, such as `catalog.v1`. Preserve imported contracts and paths; `make gen` maps their Go imports to the local module. Shared Google contracts belong in `third_party`.
 - Put gRPC adapters in each capability's `grpc.go`. Implement `modules.GRPCModule` and register via `GRPC(grpc.ServiceRegistrar)`; HTTP and gRPC share the business module instance.
