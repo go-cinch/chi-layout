@@ -52,6 +52,13 @@ questions:
       type: string
       default: "true"
 
+  - name: enable_grpc
+    prompt:
+      message: Include gRPC support?
+      type: select
+      options: ["true", "false"]
+      default: "true"
+
   - name: enable_database
     prompt:
       message: Enable SQL database support?
@@ -74,7 +81,7 @@ questions:
   - name: enable_game_example
     when: '{{ and .enable_database .enable_migrations }}'
     prompt:
-      message: Include the Game HTTP/gRPC CRUD example?
+      message: Include the Game CRUD example?
       type: string
       default: "false"
 
@@ -101,6 +108,7 @@ computed:
   proto_package_final: '{{ replace "-" "_" (trimAll "-" (toLower (regexReplaceAll "[^A-Za-z0-9]+" (or .Scaffold.service_name .Scaffold.Project) "-"))) }}'
   module_name_final: '{{ or .Scaffold.module_name .Scaffold.service_name .Scaffold.Project }}'
   enable_health_check_final: '{{ eq .Scaffold.enable_health_check "true" }}'
+  enable_grpc_final: '{{ $enabled := or .Scaffold.enable_grpc "true" }}{{ if or (eq $enabled "true") (eq $enabled "false") }}{{ eq $enabled "true" }}{{ else }}{{ template "enable_grpc must be true or false" . }}{{ end }}'
   enable_database_final: '{{ eq .Scaffold.enable_database "true" }}'
   enable_migrations_final: '{{ and (eq .Scaffold.enable_database "true") (eq .Scaffold.enable_migrations "true") }}'
   enable_game_example_final: '{{ and (eq .Scaffold.enable_database "true") (eq .Scaffold.enable_migrations "true") (eq .Scaffold.enable_game_example "true") }}'
@@ -147,9 +155,35 @@ features:
   - value: '{{ .Computed.enable_game_example_final }}'
     globs:
       - "**/internal/infra/db/migrations/YYYYMMDDHH-game.sql"
-      - "**/internal/modules/game/**"
+      - "**/internal/modules/game/game.go"
+      - "**/internal/modules/game/game_test.go"
+      - "**/internal/modules/game/http.go"
+      - "**/internal/modules/game/http_test.go"
+
+  - value: '{{ and .Computed.enable_game_example_final .Computed.enable_grpc_final }}'
+    globs:
+      - "**/internal/modules/game/grpc.go"
+      - "**/internal/modules/game/grpc_test.go"
       - "**/api/**"
       - "**/third_party/google/protobuf/empty.proto"
+
+  - value: '{{ .Computed.enable_grpc_final }}'
+    globs:
+      - "**/conf/grpc.yml"
+      - "**/internal/cmd/protogen/**"
+      - "**/internal/common/rpc/client.go"
+      - "**/internal/common/rpc/client_test.go"
+      - "**/internal/common/rpc/interceptor.go"
+      - "**/internal/common/rpc/interceptor_test.go"
+      - "**/internal/common/rpc/server.go"
+      - "**/internal/common/rpc/server_test.go"
+
+  - value: '{{ and .Computed.enable_grpc_final .Computed.enable_trace_final }}'
+    globs:
+      - "**/internal/common/rpc/client_trace.go"
+      - "**/internal/common/rpc/client_trace_test.go"
+      - "**/internal/common/rpc/trace.go"
+      - "**/internal/common/rpc/trace_test.go"
 
   - value: '{{ .Computed.enable_redis_final }}'
     globs:
@@ -160,10 +194,6 @@ features:
     globs:
       - "**/internal/common/server/trace.go"
       - "**/internal/common/server/trace_test.go"
-      - "**/internal/common/rpc/client_trace.go"
-      - "**/internal/common/rpc/client_trace_test.go"
-      - "**/internal/common/rpc/trace.go"
-      - "**/internal/common/rpc/trace_test.go"
       - "**/internal/common/tracing/**"
       - "**/conf/tracer.yml"
 
@@ -175,6 +205,7 @@ presets:
     http_port: "8080"
     http_timeout: "30s"
     enable_health_check: "true"
+    enable_grpc: "true"
     enable_database: "false"
     database_driver: "postgres"
     enable_migrations: "false"
@@ -189,6 +220,7 @@ presets:
     http_port: "8080"
     http_timeout: "30s"
     enable_health_check: "true"
+    enable_grpc: "true"
     enable_database: "true"
     database_driver: "postgres"
     enable_migrations: "true"

@@ -6,9 +6,11 @@ import (
 	"testing"
 
 	"{{ .Computed.module_name_final }}/internal/common/config"
+{{- if .Computed.enable_grpc_final }}
 "{{ .Computed.module_name_final }}/internal/docs"
 "{{ .Computed.module_name_final }}/internal/modules"
 "google.golang.org/grpc"
+{{- end }}
 {{- if .Computed.enable_database_final }}
 	"{{ .Computed.module_name_final }}/internal/infra/db"
 {{- end }}
@@ -47,6 +49,7 @@ func TestNewRouter(t *testing.T) {
 	}
 }
 
+{{ if .Computed.enable_grpc_final -}}
 type rpcOnlyModule struct{}
 func (rpcOnlyModule) GRPC(grpc.ServiceRegistrar) {}
 func TestConfigureOptionalTransports(t *testing.T) {
@@ -67,3 +70,4 @@ func TestConfigureOptionalTransports(t *testing.T) {
   if a.grpcServer!=nil {a.grpcServer.Stop()}
  }
 }
+{{ end -}}

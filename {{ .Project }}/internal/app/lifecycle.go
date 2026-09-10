@@ -9,8 +9,10 @@ import (
 	"net/http"
 	"time"
 
+{{- if .Computed.enable_grpc_final }}
 	"google.golang.org/grpc"
 	"{{ .Computed.module_name_final }}/internal/common/rpc"
+{{- end }}
 )
 
 type endpoint struct {
@@ -46,6 +48,7 @@ func (a *Application) Run(ctx context.Context) error {
 			return nil
 		}})
 	}
+{{- if .Computed.enable_grpc_final }}
 	if a.grpcServer != nil {
 		address := a.grpcAddr
 		if address == "" {
@@ -53,6 +56,7 @@ func (a *Application) Run(ctx context.Context) error {
 		}
 		endpoints = append(endpoints, endpoint{name: "grpc", addr: address, serve: a.grpcServer.Serve, shutdown: func(ctx context.Context) error { return rpc.Shutdown(ctx, a.grpcServer) }})
 	}
+{{- end }}
 	if len(endpoints) == 0 {
 		return errors.New("no servers configured")
 	}
@@ -75,7 +79,7 @@ func (a *Application) Run(ctx context.Context) error {
 		slog.InfoContext(ctx, item.name+" server running at "+listener.Addr().String())
 		go func() {
 			err := item.serve(listener)
-			if err != nil && !errors.Is(err, http.ErrServerClosed) && !errors.Is(err, grpc.ErrServerStopped) {
+			if err != nil && !errors.Is(err, http.ErrServerClosed){{ if .Computed.enable_grpc_final }} && !errors.Is(err, grpc.ErrServerStopped){{ end }} {
 				err = fmt.Errorf("%s server: %w", item.name, err)
 			} else {
 				err = nil

@@ -9,8 +9,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+{{- if .Computed.enable_grpc_final }}
 	"{{ .Computed.module_name_final }}/internal/common/config"
 	"{{ .Computed.module_name_final }}/internal/common/rpc"
+{{- end }}
 )
 
 func TestRunAndClose(t *testing.T) {
@@ -71,6 +73,7 @@ func TestRunDoesNotLogBeforeListenSucceeds(t *testing.T) {
 	}
 }
 
+{{ if .Computed.enable_grpc_final -}}
 func TestGRPCLifecycle(t *testing.T) {
 	server, err := rpc.NewServer(&config.Config{})
 	if err != nil {
@@ -111,3 +114,4 @@ func TestGRPCLifecycle(t *testing.T) {
 	}
 	probe.Close()
 }
+{{ end -}}

@@ -1,6 +1,8 @@
 NR == 1 { next }
 
+{{ if .Computed.enable_grpc_final -}}
 $1 ~ /\.pb\.go:/ { next }
+{{ end -}}
 
 {
     split($1, location, ":")

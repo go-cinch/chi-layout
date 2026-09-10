@@ -4,4 +4,6 @@ coverage.out
 .vscode
 .DS_Store
 
+{{ if .Computed.enable_grpc_final -}}
 .tools
+{{ end -}}

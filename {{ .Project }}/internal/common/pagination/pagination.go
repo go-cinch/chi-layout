@@ -2,7 +2,7 @@ package pagination
 
 import "fmt"
 
-// Limits apply to HTTP and RPC calls alike. Zero configuration selects defaults.
+// Limits apply to HTTP{{ if .Computed.enable_grpc_final }} and RPC{{ end }} calls. Zero configuration selects defaults.
 type Limits struct {
 	MaxP int32
 	MaxS int32

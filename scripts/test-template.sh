@@ -9,6 +9,7 @@ trap 'rm -rf "$tmp_dir"' EXIT INT TERM
 validate_project() (
   generated=$1
   router=$2
+  grpc=${3:-true}
   cd "$generated"
   test -f .dockerignore
   ! rg -q '^/?\.git/?$' .dockerignore
@@ -21,6 +22,35 @@ validate_project() (
   go mod tidy
   make lint test build
   go list -m all > "$tmp_dir/dependencies.txt"
+  if [ "$grpc" = false ]; then
+    test ! -e conf/grpc.yml
+    test ! -e internal/common/rpc
+    test ! -e internal/cmd/protogen
+    test ! -e api
+    test ! -e third_party
+    test ! -e .tools
+    test ! -e internal/modules/game/grpc.go
+    test ! -e internal/modules/game/grpc_test.go
+    if rg -ni 'grpc|protobuf|protogen' internal/app internal/modules internal/cmd AGENTS.md Makefile Dockerfile README.md; then
+      echo "gRPC references remain in an HTTP-only project" >&2
+      exit 1
+    fi
+    if [ ! -e conf/tracer.yml ]; then
+      if rg -q '^google.golang.org/grpc ' "$tmp_dir/dependencies.txt"; then
+        echo "gRPC dependency remains with gRPC and tracing disabled" >&2
+        exit 1
+      fi
+      # Gin's protobuf HTTP binding can retain protobuf independently of gRPC.
+      if [ "$router" = chi ] && rg -q '^google.golang.org/protobuf ' "$tmp_dir/dependencies.txt"; then
+        echo "protobuf dependency remains in the minimal chi project" >&2
+        exit 1
+      fi
+    fi
+  else
+    test -f conf/grpc.yml
+    test -f internal/common/rpc/server.go
+    test -f internal/cmd/protogen/main.go
+  fi
   if [ "$router" = gin ]; then
     rg -q '^github.com/gin-gonic/gin ' "$tmp_dir/dependencies.txt"
     ! rg -q '^github.com/go-chi/chi' "$tmp_dir/dependencies.txt"
@@ -54,6 +84,25 @@ for router in chi gin; do
     fi
   done
 
+  for preset in default full; do
+    project="$router-$preset-http-only"
+    output_dir="$tmp_dir/$project"
+    mkdir -p "$output_dir"
+    printf 'Generating %s with preset %s and gRPC disabled...\n' "$router" "$preset"
+    set --
+    if [ "$preset" = default ]; then set -- "enable_trace=false"; fi
+    if [ "$preset" = full ] && [ "$router" = gin ]; then set -- "database_driver=mysql"; fi
+    scaffold new "$template_dir" \
+      --output-dir="$output_dir" --run-hooks=never --no-prompt --preset="$preset" \
+      "Project=$project" "http_router=$router" "enable_grpc=false" "$@"
+    validate_project "$output_dir/$project" "$router" false
+    if [ "$preset" = full ]; then
+      test -f "$output_dir/$project/internal/modules/game/http.go"
+      test -f "$output_dir/$project/internal/infra/db/migrations/YYYYMMDDHH-game.sql"
+      rg -q '/game/\{id\}' "$output_dir/$project/internal/docs/openapi.yaml"
+    fi
+  done
+
   project="$router-mysql"
   output_dir="$tmp_dir/$project"
   mkdir -p "$output_dir"
@@ -79,7 +128,9 @@ for router in chi gin; do
   output_dir="$tmp_dir/$project"
   mkdir -p "$output_dir"
   printf 'Generating %s through Make with hooks...\n' "$router"
-  make -C "$template_dir" full "PROJECT=$project" "OUTPUT_DIR=$output_dir" "HTTP_ROUTER=$router"
+  grpc=true
+  if [ "$router" = gin ]; then grpc=false; fi
+  make -C "$template_dir" full "PROJECT=$project" "OUTPUT_DIR=$output_dir" "HTTP_ROUTER=$router" "ENABLE_GRPC=$grpc"
   test -f "$output_dir/$project/internal/common/config/config.gen.go"
   test -f "$output_dir/$project/internal/app/modules.gen.go"
   test -x "$output_dir/$project/bin/$project"
@@ -131,5 +182,19 @@ if scaffold new "$template_dir" --output-dir="$tmp_dir/invalid-scaffold" \
 fi
 rg -q 'http_router must be chi or gin' "$tmp_dir/invalid-scaffold.log"
 test ! -e "$tmp_dir/invalid-scaffold/invalid/go.mod"
+
+printf 'Checking invalid gRPC selector values...\n'
+if make -C "$template_dir" default ENABLE_GRPC=invalid "OUTPUT_DIR=$tmp_dir/invalid-grpc-make" > "$tmp_dir/invalid-grpc-make.log" 2>&1; then
+  cat "$tmp_dir/invalid-grpc-make.log"
+  exit 1
+fi
+rg -q 'ENABLE_GRPC must be true or false' "$tmp_dir/invalid-grpc-make.log"
+if scaffold new "$template_dir" --output-dir="$tmp_dir/invalid-grpc-scaffold" \
+  --run-hooks=never --no-prompt --preset=default Project=invalid enable_grpc=invalid > "$tmp_dir/invalid-grpc-scaffold.log" 2>&1; then
+  cat "$tmp_dir/invalid-grpc-scaffold.log"
+  exit 1
+fi
+rg -q 'enable_grpc must be true or false' "$tmp_dir/invalid-grpc-scaffold.log"
+test ! -e "$tmp_dir/invalid-grpc-scaffold/invalid/go.mod"
 
 printf 'All router, preset, feature, hook and validation checks passed.\n'

@@ -13,7 +13,7 @@ import (
 )
 
 func (a *Application) NewRouter(cfg *config.Config) (http.Handler, error) {
-	mounted, _ := a.generatedModules()
+	mounted{{ if .Computed.enable_grpc_final }}, _{{ end }} := a.generatedModules()
 	return a.newRouter(cfg, mounted)
 }
 

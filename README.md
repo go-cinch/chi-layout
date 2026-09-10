@@ -8,7 +8,7 @@ A minimal, configurable Go HTTP service scaffold built on `net/http`, with
 
 | Preset | Included |
 | --- | --- |
-| `default` | HTTP server, selected router, health check, JSON logging, tracing and pprof |
+| `default` | HTTP server, selected router, gRPC support, health check, JSON logging, tracing and pprof |
 | `full` | Everything in `default`, plus PostgreSQL/MySQL, SQL migrations, Redis and a Game HTTP/gRPC CRUD example |
 
 ## Generate with Make
@@ -39,6 +39,17 @@ make default PROJECT=my-service HTTP_ROUTER=gin
 time; generated projects contain only the chosen router implementation and dependency.
 Omitting `HTTP_ROUTER` is equivalent to `HTTP_ROUTER=chi`, including for `full`.
 
+Set `ENABLE_GRPC=false` to omit gRPC support (both presets default to `true`):
+
+```bash
+make default PROJECT=my-service ENABLE_GRPC=false
+make full PROJECT=my-service HTTP_ROUTER=gin ENABLE_GRPC=false
+```
+
+This removes RPC adapters, clients, configuration, Proto generation and debug tools.
+The full preset retains Game HTTP CRUD and its database. Tracing remains independent;
+its OTLP exporter can still bring indirect gRPC dependencies.
+
 Use `OUTPUT_DIR` to select another destination:
 
 ```bash
@@ -59,6 +70,7 @@ scaffold new https://github.com/go-cinch/chi-layout \
 Replace `default` with `full` to include the database, migrations, Redis and
 the Game example.
 Pass `http_router=gin` to `scaffold new` to select Gin, or choose it interactively.
+Pass `enable_grpc=false` to omit gRPC with `scaffold new`.
 Interactive generation can also adjust the HTTP port, timeout, database driver
 and individual features.
 
@@ -110,7 +122,7 @@ make test
 ```
 
 This validates both routers with both presets, MySQL and Redis-only combinations,
-post-generation hooks, invalid router values and dependency isolation.
+gRPC inclusion/exclusion, post-generation hooks, invalid selectors and dependency isolation.
 
 ## Environment Overrides
 

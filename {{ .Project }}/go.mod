@@ -3,8 +3,10 @@ module {{ .Computed.module_name_final }}
 go 1.27.1
 
 require (
+{{- if .Computed.enable_grpc_final }}
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
+{{- end }}
 {{- if eq .Computed.http_router_final "gin" }}
 	github.com/gin-gonic/gin v1.12.0
 {{- else }}

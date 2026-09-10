@@ -6,6 +6,7 @@ VERSION := dev
 endif
 LDFLAGS := -s -w -X $(MODULE)/internal/common/config.Version=$(VERSION)
 
+{{ if .Computed.enable_grpc_final -}}
 GRPCUI_VERSION ?= v1.5.4
 GRPCUI_BIN := $(CURDIR)/.tools/grpcui-$(GRPCUI_VERSION)/grpcui
 GRPCUI ?= $(GRPCUI_BIN)
@@ -13,15 +14,18 @@ GRPC_ADDR ?= $(if $(SERVICE_GRPC_ADDR),$(SERVICE_GRPC_ADDR),$(shell awk '$$1 == 
 GRPCUI_PORT ?= 8090
 GRPC_SERVICE ?= {{ .Computed.proto_service_name_final }}
 
-.PHONY: proto config api gen tidy fmt lint test build run grpcui debug-grpc clean
+{{ end -}}
+.PHONY: config api gen tidy fmt lint test build run clean{{ if .Computed.enable_grpc_final }} proto grpcui debug-grpc{{ end }}
 
 config:
 	go run -mod=mod ./internal/cmd/configgen -config-dir ./conf -output ./internal/common/config/config.gen.go
 
+{{ if .Computed.enable_grpc_final -}}
 proto:
 	go run -mod=mod ./internal/cmd/protogen
 
-api: proto
+{{ end -}}
+api:{{ if .Computed.enable_grpc_final }} proto{{ end }}
 	go run ./internal/cmd/modulegen -modules-dir ./internal/modules -app-file ./internal/app/app.go -go-mod ./go.mod -output ./internal/app/modules.gen.go
 	go run ./internal/cmd/docsgen -source ./internal -config-dir ./conf -output ./internal/docs/openapi.yaml -title "$(APP) API"
 
@@ -49,6 +53,7 @@ build: gen
 run: gen
 	go run ./cmd/server -c ./conf
 
+{{ if .Computed.enable_grpc_final -}}
 # Install the pinned project-local grpcui unless an executable is explicitly supplied.
 grpcui:
 	@if [ "$(GRPCUI)" = "$(GRPCUI_BIN)" ] && [ ! -x "$(GRPCUI_BIN)" ]; then \
@@ -79,5 +84,6 @@ debug-grpc: grpcui
 	fi; \
 	exec "$(GRPCUI)" "$$@" "$$addr"
 
+{{ end -}}
 clean:
 	rm -rf ./bin ./coverage.out

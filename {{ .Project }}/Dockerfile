@@ -2,7 +2,7 @@ FROM golang:1.27.1-alpine3.23 AS builder
 
 ENV CGO_ENABLED=0
 
-RUN apk add --no-cache ca-certificates git make protobuf
+RUN apk add --no-cache ca-certificates git make{{ if .Computed.enable_grpc_final }} protobuf{{ end }}
 
 WORKDIR /src
 

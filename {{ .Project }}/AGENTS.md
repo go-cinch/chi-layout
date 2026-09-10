@@ -18,7 +18,7 @@
 
 ## Dependencies
 
-- `internal/common` must not import concrete business modules; server/RPC infrastructure may use the root module contracts.
+- `internal/common` must not import concrete business modules; server{{ if .Computed.enable_grpc_final }}/RPC{{ end }} infrastructure may use the root module contracts.
 - Business modules may depend on common infrastructure and small interfaces.
 - Wire dependencies explicitly in `internal/app`; avoid package globals.
 
@@ -38,20 +38,11 @@
 - A missing business/database record returns HTTP 404 with `{"msg":"..."}` (for example `{"msg":"game not found"}`). Unmatched routes also return HTTP 404.
 - Apply this mapping at the module's HTTP boundary. Return HTTP 400 for malformed input or invalid business fields, and HTTP 500 for unexpected database/server failures; do not globally rewrite error status codes.
 - Generated OpenAPI response statuses and body schemas must match the actual HTTP behavior.
-- Date/time response fields use `int64` Unix milliseconds since `1970-01-01T00:00:00Z` in Go and Proto. Convert database time values with `UnixMilli()`.
-- HTTP JSON uses numbers; ProtoJSON uses decimal strings for `int64`. Convert to JavaScript `Number` only within its safe integer range (±(2^53−1)); otherwise use `BigInt` or lossless JSON parsing.
+- Date/time response fields use `int64` Unix milliseconds since `1970-01-01T00:00:00Z` in Go{{ if .Computed.enable_grpc_final }} and Proto{{ end }}. Convert database time values with `UnixMilli()`.
+- HTTP JSON uses numbers.{{ if .Computed.enable_grpc_final }} ProtoJSON uses decimal strings for `int64`.{{ end }} Convert to JavaScript `Number` only within its safe integer range (±(2^53−1)); otherwise use `BigInt` or lossless JSON parsing.
 - Do not retain request-scoped values after the handler returns unless copied.
 
-## gRPC
-
-- Store Proto contracts in `api/<service>-proto/`, with `<service>.proto` as the service entry file; generate Go bindings into `api/<service>/`. For published contracts, keep field numbers stable and reserve removed fields.
-- Format Proto files with two-space indentation and a blank line between top-level definitions; see the [Proto style guide](https://protobuf.dev/programming-guides/style/).
-- Use service-specific Proto packages, such as `catalog.v1`. Preserve imported contracts and paths; `make gen` maps their Go imports to the local module. Shared Google contracts belong in `third_party`.
-- Put gRPC adapters in each capability's `grpc.go`. Implement `modules.GRPCModule` and register via `GRPC(grpc.ServiceRegistrar)`; HTTP and gRPC share the business module instance.
-- Start gRPC only when business modules register it. gRPC-only modules require neither `Name()` nor `HTTP()`.
-- Configure address, unary timeout, shutdown deadline and reflection in `conf/grpc.yml`. Streams use caller deadlines; graceful shutdown has a forced-stop fallback.
-- Initialize downstream clients with `rpc.NewClient` in `internal/app/client.go`, using `conf/client.yml`. Store typed clients on `Application`, inject through constructors, and register cleanup for shutdown and startup failures.
-- Client unary calls default to 5 seconds and preserve shorter deadlines. Optional health checks require `SERVING`; otherwise initialization is lazy. Clients use TLS by default; set `Insecure: true` for plaintext.
+## CRUD and Pagination
 
 Google CRUD naming references:
 
@@ -63,9 +54,24 @@ Google CRUD naming references:
 | Update | `Update<Resource>` | [AIP-134](https://google.aip.dev/134) |
 | Delete one | `Delete<Resource>` | [AIP-135](https://google.aip.dev/135) |
 
-Use `BatchDelete<Resources>` for bulk RPC deletion ([AIP-235](https://google.aip.dev/235)). HTTP uses singular resource paths, `p`/`s`, and comma-separated IDs for bulk deletion.
+{{ if .Computed.enable_grpc_final -}}
+Use `BatchDelete<Resources>` for bulk RPC deletion ([AIP-235](https://google.aip.dev/235)).
+{{ end -}}
+HTTP uses singular resource paths, `p`/`s`, and comma-separated IDs for bulk deletion.
 
-Use `p` and `s` for pagination fields in HTTP and Proto requests/responses. Request fields are optional: omission selects defaults; explicit zero, negative or configured out-of-range values return an empty list. Configure their maxima in `conf/pagination.yml` (`maxP`/`maxS`, both default to 10000). Use the same data-window limits in business methods and Swagger; environment overrides are `SERVICE_PAGINATION_MAXP` and `SERVICE_PAGINATION_MAXS`.
+Use `p` and `s` for pagination fields in HTTP{{ if .Computed.enable_grpc_final }} and Proto{{ end }} requests/responses. Request fields are optional: omission selects defaults; explicit zero, negative or configured out-of-range values return an empty list. Configure their maxima in `conf/pagination.yml` (`maxP`/`maxS`, both default to 10000). Use the same data-window limits in business methods and Swagger; environment overrides are `SERVICE_PAGINATION_MAXP` and `SERVICE_PAGINATION_MAXS`.
+
+{{ if .Computed.enable_grpc_final -}}
+## gRPC
+
+- Store Proto contracts in `api/<service>-proto/`, with `<service>.proto` as the service entry file; generate Go bindings into `api/<service>/`. For published contracts, keep field numbers stable and reserve removed fields.
+- Format Proto files with two-space indentation and a blank line between top-level definitions; see the [Proto style guide](https://protobuf.dev/programming-guides/style/).
+- Use service-specific Proto packages, such as `catalog.v1`. Preserve imported contracts and paths; `make gen` maps their Go imports to the local module. Shared Google contracts belong in `third_party`.
+- Put gRPC adapters in each capability's `grpc.go`. Implement `modules.GRPCModule` and register via `GRPC(grpc.ServiceRegistrar)`; HTTP and gRPC share the business module instance.
+- Start gRPC only when business modules register it. gRPC-only modules require neither `Name()` nor `HTTP()`.
+- Configure address, unary timeout, shutdown deadline and reflection in `conf/grpc.yml`. Streams use caller deadlines; graceful shutdown has a forced-stop fallback.
+- Initialize downstream clients with `rpc.NewClient` in `internal/app/client.go`, using `conf/client.yml`. Store typed clients on `Application`, inject through constructors, and register cleanup for shutdown and startup failures.
+- Client unary calls default to 5 seconds and preserve shorter deadlines. Optional health checks require `SERVING`; otherwise initialization is lazy. Clients use TLS by default; set `Insecure: true` for plaintext.
 
 Map business errors at the gRPC boundary:
 
@@ -113,6 +119,7 @@ if values := md.Get("x-username"); len(values) == 1 {
 
 See the [official gRPC metadata guide](https://grpc.io/docs/guides/metadata/).
 
+{{ end -}}
 ## Logging
 
 - Apply these principles to all logs: business operations, infrastructure, startup, configuration, and HTTP requests.
@@ -149,8 +156,8 @@ Bad: the generic message says little, and the reader must scan separate fields t
 
 - Run `make config` when configuration fields or types change. Value changes take effect on restart.
 - Run `make api` after changing module constructors, HTTP routes, or shared response helper calls.
-- Run `make gen` to regenerate configuration, protobuf bindings, module registrations and HTTP documentation. Install `protoc` when adding Proto definitions; Go plugins are pinned and installed automatically into `.tools`.
-- Generated config, module registries, `.pb.go` files and OpenAPI are tool-owned; regenerate them instead of editing by hand.
+- Run `make gen` to regenerate configuration,{{ if .Computed.enable_grpc_final }} protobuf bindings,{{ end }} module registrations and HTTP documentation.{{ if .Computed.enable_grpc_final }} Install `protoc` when adding Proto definitions; Go plugins are pinned and installed automatically into `.tools`.{{ end }}
+- Generated config, module registries,{{ if .Computed.enable_grpc_final }} `.pb.go` files,{{ end }} and OpenAPI are tool-owned; regenerate them instead of editing by hand.
 - Automatic generation tools must print a unified diff when an existing generated file changes; print `create` for a new file and `unchanged` when no change is needed.
 
 ## Testing
@@ -160,6 +167,6 @@ Bad: the generic message says little, and the reader must scan separate fields t
 - Put cross-package and external-service integration tests in `internal/tests`.
 - Use `net/http/httptest` for handlers and routers.
 - Prefer external test packages for public behavior; use the implementation package when testing internal helpers is justified.
-- Require at least 80% statement coverage for every package under `internal/modules` and at least 60% for every other production package. Exclude compiler-generated `.pb.go` files from coverage thresholds; test adapters and RPC behavior with generated clients.
+- Require at least 80% statement coverage for every package under `internal/modules` and at least 60% for every other production package.{{ if .Computed.enable_grpc_final }} Exclude compiler-generated `.pb.go` files from coverage thresholds; test adapters and RPC behavior with generated clients.{{ end }}
 - Treat coverage as a guardrail: test meaningful behavior and failure paths, and do not add low-value tests or production indirection only to increase the percentage.
 - Run `make lint`, `make test`, and `make build` before committing.

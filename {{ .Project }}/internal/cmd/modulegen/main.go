@@ -23,7 +23,9 @@ type moduleSpec struct {
 	ImportPath string
 	Arguments  []string
 	HTTP       bool
+{{- if .Computed.enable_grpc_final }}
 	GRPC       bool
+{{- end }}
 }
 
 func main() {
@@ -164,7 +166,10 @@ func inspectModule(dir, rootImport string, application map[string][]string) (mod
 	}
 	for _, currentPackage := range packages {
 		implementation := ""
-		hasHTTP, hasGRPC := false, false
+		hasHTTP := false
+{{- if .Computed.enable_grpc_final }}
+		hasGRPC := false
+{{- end }}
 		for _, file := range currentPackage.Files {
 			imports, err := importPaths(file)
 			if err != nil {
@@ -172,11 +177,13 @@ func inspectModule(dir, rootImport string, application map[string][]string) (mod
 			}
 			for name, capabilities := range assertedModules(file, imports, rootImport) {
 				if implementation != "" && implementation != name {
-					return moduleSpec{}, false, errors.New("one module constructor must own both transport capabilities")
+					return moduleSpec{}, false, errors.New("one module constructor must own the transport capabilities")
 				}
 				implementation = name
 				hasHTTP = hasHTTP || capabilities.HTTP
+{{- if .Computed.enable_grpc_final }}
 				hasGRPC = hasGRPC || capabilities.GRPC
+{{- end }}
 			}
 		}
 		if implementation == "" {
@@ -196,7 +203,7 @@ func inspectModule(dir, rootImport string, application map[string][]string) (mod
 				if err != nil {
 					return moduleSpec{}, false, err
 				}
-				return moduleSpec{Alias: currentPackage.Name, Arguments: arguments, HTTP: hasHTTP, GRPC: hasGRPC}, true, nil
+				return moduleSpec{Alias: currentPackage.Name, Arguments: arguments, HTTP: hasHTTP{{ if .Computed.enable_grpc_final }}, GRPC: hasGRPC{{ end }}}, true, nil
 			}
 		}
 		return moduleSpec{}, false, errors.New("Module implementation must have a New constructor")
@@ -217,7 +224,7 @@ func assertedModules(file *ast.File, imports map[string]string, rootImport strin
 				continue
 			}
 			selector, ok := specification.Type.(*ast.SelectorExpr)
-			if !ok || (selector.Sel.Name != "Module" && selector.Sel.Name != "HTTPModule" && selector.Sel.Name != "GRPCModule") {
+			if !ok || (selector.Sel.Name != "Module" && selector.Sel.Name != "HTTPModule"{{ if .Computed.enable_grpc_final }} && selector.Sel.Name != "GRPCModule"{{ end }}) {
 				continue
 			}
 			alias, ok := selector.X.(*ast.Ident)
@@ -226,11 +233,15 @@ func assertedModules(file *ast.File, imports map[string]string, rootImport strin
 			}
 			if name := assertedType(specification.Values[0]); name != "" {
 				item := found[name]
+{{- if .Computed.enable_grpc_final }}
 				if selector.Sel.Name == "GRPCModule" {
 					item.GRPC = true
 				} else {
+{{- end }}
 					item.HTTP = true
+{{- if .Computed.enable_grpc_final }}
 				}
+{{- end }}
 				found[name] = item
 			}
 		}
@@ -337,19 +348,21 @@ func generate(modulePath string, specs []moduleSpec) ([]byte, error) {
 	for _, spec := range specs {
 		fmt.Fprintf(&source, "%s %q\n", spec.Alias, spec.ImportPath)
 	}
-	source.WriteString(")\n\nfunc (a *Application) generatedModules() ([]modules.HTTPModule, []modules.GRPCModule) {\n")
-	source.WriteString("var httpModules []modules.HTTPModule\nvar grpcModules []modules.GRPCModule\n")
+	source.WriteString(")\n\nfunc (a *Application) generatedModules() {{ if .Computed.enable_grpc_final }}([]modules.HTTPModule, []modules.GRPCModule){{ else }}[]modules.HTTPModule{{ end }} {\n")
+	source.WriteString("var httpModules []modules.HTTPModule\n{{ if .Computed.enable_grpc_final }}var grpcModules []modules.GRPCModule\n{{ end }}")
 	for index, spec := range specs {
 		name := fmt.Sprintf("module%d", index)
 		fmt.Fprintf(&source, "%s := %s.New(%s)\n", name, spec.Alias, strings.Join(spec.Arguments, ", "))
 		if spec.HTTP {
 			fmt.Fprintf(&source, "httpModules = append(httpModules,%s)\n", name)
 		}
+{{- if .Computed.enable_grpc_final }}
 		if spec.GRPC {
 			fmt.Fprintf(&source, "grpcModules = append(grpcModules,%s)\n", name)
 		}
+{{- end }}
 	}
-	source.WriteString("return httpModules,grpcModules\n}\n")
+	source.WriteString("return httpModules{{ if .Computed.enable_grpc_final }},grpcModules{{ end }}\n}\n")
 	formatted, err := format.Source(source.Bytes())
 	if err != nil {
 		return nil, fmt.Errorf("format generated modules: %w", err)

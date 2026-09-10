@@ -91,6 +91,7 @@ func writeTestFile(t *testing.T, root, name, content string) string {
 	return path
 }
 
+{{ if .Computed.enable_grpc_final -}}
 func TestTransportCapabilities(t *testing.T) {
 	root := t.TempDir()
 	goMod := writeTestFile(t, root, "go.mod", "module example.com/service\n")
@@ -127,3 +128,4 @@ func TestTransportCapabilities(t *testing.T) {
 		t.Fatalf("stale registration: %s", data)
 	}
 }
+{{ end -}}
