@@ -39,6 +39,7 @@
 - Apply this mapping at the module's HTTP boundary. Return HTTP 400 for malformed input or invalid business fields, and HTTP 500 for unexpected database/server failures; do not globally rewrite error status codes.
 - Generated OpenAPI response statuses and body schemas must match the actual HTTP behavior.
 - Date/time response fields use `int64` Unix milliseconds since `1970-01-01T00:00:00Z` in Go{{ if .Computed.enable_grpc_final }} and Proto{{ end }}. Convert database time values with `UnixMilli()`.
+- Name event timestamps consistently with a past participle followed by `At`: `createdAt`, `updatedAt`, `startedAt`, and `endedAt` in JSON; `CreatedAt`, `UpdatedAt`, `StartedAt`, and `EndedAt` in Go. Use `created_at`, `updated_at`, `started_at`, and `ended_at` in SQL{{ if .Computed.enable_grpc_final }} and Proto{{ end }}. Do not mix these with `startsAt`/`endsAt` or `startAt`/`endAt`. Apply this convention to requests, responses, configuration, examples, and tests.
 - HTTP JSON uses numbers.{{ if .Computed.enable_grpc_final }} ProtoJSON uses decimal strings for `int64`.{{ end }} Convert to JavaScript `Number` only within its safe integer range (±(2^53−1)); otherwise use `BigInt` or lossless JSON parsing.
 - Do not retain request-scoped values after the handler returns unless copied.
 
@@ -159,6 +160,40 @@ Bad: the generic message says little, and the reader must scan separate fields t
 - Run `make gen` to regenerate configuration,{{ if .Computed.enable_grpc_final }} protobuf bindings,{{ end }} module registrations and HTTP documentation.{{ if .Computed.enable_grpc_final }} Install `protoc` when adding Proto definitions; Go plugins are pinned and installed automatically into `.tools`.{{ end }}
 - Generated config, module registries,{{ if .Computed.enable_grpc_final }} `.pb.go` files,{{ end }} and OpenAPI are tool-owned; regenerate them instead of editing by hand.
 - Automatic generation tools must print a unified diff when an existing generated file changes; print `create` for a new file and `unchanged` when no change is needed.
+
+## Release Tags
+
+- Stable tags use `vYYYY.M.PATCH`; beta tags use `vYYYY.M.PATCH-beta.N`. The `v` prefix is required. Use a four-digit year and a month from 1 to 12. Never zero-pad the month, `PATCH`, or `N`.
+- Choose the release sequence's year/month in `Asia/Shanghai`. `PATCH` is a positive monthly release counter, starting at 1 and increasing for each new release sequence. It does not represent the calendar day: the first September release is `v2026.9.1` even when prepared on September 10. Inspect remote tags, including prereleases, before choosing the next unused number.
+- Within a release sequence, beta numbering starts at `beta.1` and increases for each new candidate. Promote a validated candidate to the corresponding stable version without the beta suffix. Subsequent fixes, including same-day fixes, use the next `PATCH`. A new month's first release sequence starts at `PATCH=1`.
+- Create an annotated tag on the exact clean, committed revision that passed `make lint`, `make test`, and `make build`. Use signed tags when signing is configured. Record release changes in `CHANGELOG.md` before tagging.
+- Build release binaries with `make build` from the exact tagged or committed revision. The Makefile resolves an exact tag first and otherwise uses the five-character `git rev-parse --short=5 HEAD` SHA; use the same immutable tag for release images. Verify the artifact's version and source commit before publishing.
+- Never move, overwrite, delete, or reuse published release tags or versioned images. Publish a new version for corrections.
+- Create or push release tags only when explicitly requested. Commit/push authorization alone does not authorize a release. Push the specific tag, not all local tags.
+
+### Valid Examples
+
+| Example | Meaning |
+| --- | --- |
+| `v2026.9.1` | First stable release sequence for September 2026, regardless of the day. |
+| `v2026.9.2` | Next September release, including a fix published on the same day as the first. |
+| `v2026.9.3-beta.1` | First beta candidate for the third September release sequence. |
+| `v2026.9.3-beta.2` | Next beta candidate for that same release sequence. |
+| `v2026.9.3` | Stable version of the validated third release sequence. |
+| `v2026.10.1` | First release sequence for October 2026. |
+
+### Invalid Examples
+
+| Example | Problem | Correct Form |
+| --- | --- | --- |
+| `2026.9.1` | Missing `v` prefix. | `v2026.9.1` |
+| `v2026.09.1` | Zero-padded month. | `v2026.9.1` |
+| `v2026.9.01` | Zero-padded release counter. | `v2026.9.1` |
+| `v2026.9.0` | Release counters start at 1. | `v2026.9.1` |
+| `v2026.9.1-1` | Numeric correction suffix instead of a new release counter. | `v2026.9.2` for the next fix. |
+| `v2026.9.3.beta.1` | Incorrect beta separator. | `v2026.9.3-beta.1` |
+| `v2026.9.3-beta.01` | Zero-padded beta counter. | `v2026.9.3-beta.1` |
+| Repointing published `v2026.9.1` to a newer commit | Published tags are immutable. | Publish the next unused version. |
 
 ## Testing
 
