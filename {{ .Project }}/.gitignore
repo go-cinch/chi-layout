@@ -1,0 +1,8 @@
+/bin/
+{{ if .Computed.enable_grpc_final -}}
+/.tools/
+{{ end -}}
+/coverage.out
+/.idea/
+/.vscode/
+.DS_Store

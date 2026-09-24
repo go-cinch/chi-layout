@@ -1,0 +1,5 @@
+redis:
+  dsn: "redis://127.0.0.1:6379/0"
+  # Every replica shares this prefix. Override with SERVICE_REDIS_PREFIX.
+  # Project is used verbatim, independently of service_name and module_name.
+  prefix: "dev:{{ .Scaffold.Project }}:"

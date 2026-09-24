@@ -1,0 +1,20 @@
+{
+  "HTTP_BAD_REQUEST": "请求参数无效",
+  "HTTP_DUPLICATE_REQUEST": "该请求标识已使用，请勿重复提交",
+  "HTTP_FORBIDDEN": "没有权限执行此操作",
+  "HTTP_GATEWAY_TIMEOUT": "请求超时，请稍后重试",
+  "HTTP_INVALID_IDEMPOTENCY_KEY": "幂等性标识无效",
+  "HTTP_INTERNAL": "服务器内部错误，请稍后重试",
+  "HTTP_INVALID_BODY": "请求内容格式无效",
+  "HTTP_INVALID_QUERY": "查询参数格式无效",
+  "HTTP_METHOD_NOT_ALLOWED": "不支持此请求方法",
+  "HTTP_NOT_FOUND": "请求的资源不存在",
+  "HTTP_INVALID_PAGE": "页码 p 必须为单个 32 位整数",
+  "HTTP_INVALID_PAGE_SIZE": "每页条数 s 必须为单个 32 位整数",
+  "HTTP_SERVICE_UNAVAILABLE": "服务暂不可用，请稍后重试",
+  "HTTP_UNAUTHORIZED": "登录状态无效或已过期，请重新登录",
+  "GAME_NOT_FOUND": "游戏不存在",
+  "GAME_INVALID": "游戏参数无效：需要正整数 ID 和 1–100 个字符的名称",
+  "GAME_INVALID_IDS": "请提供 1–100 个正整数游戏 ID",
+  "GAME_INVALID_ID": "游戏 ID 无效"
+}

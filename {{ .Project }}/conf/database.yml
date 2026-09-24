@@ -1,0 +1,12 @@
+database:
+  driver: {{ .Computed.database_driver_final }}
+  autoCreate: true
+{{- if eq .Computed.database_driver_final "mysql" }}
+  dsn: "root:password@tcp(127.0.0.1:3306)/{{ .Computed.service_name_snake }}?parseTime=true&loc=UTC"
+{{- else }}
+  dsn: "postgresql://root:password@127.0.0.1:5432/{{ .Computed.service_name_snake }}?sslmode=disable"
+{{- end }}
+  migrate: {{ .Computed.enable_migrations_final }}
+  maxOpenConns: 20
+  maxIdleConns: 5
+  connMaxLifetime: 30m

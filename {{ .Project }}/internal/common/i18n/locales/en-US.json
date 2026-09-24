@@ -1,0 +1,20 @@
+{
+  "HTTP_BAD_REQUEST": "Bad Request",
+  "HTTP_DUPLICATE_REQUEST": "idempotency key has already been used",
+  "HTTP_FORBIDDEN": "Forbidden",
+  "HTTP_GATEWAY_TIMEOUT": "Gateway Timeout",
+  "HTTP_INVALID_IDEMPOTENCY_KEY": "invalid idempotency key",
+  "HTTP_INTERNAL": "internal server error",
+  "HTTP_INVALID_BODY": "invalid request body",
+  "HTTP_INVALID_QUERY": "invalid query parameters",
+  "HTTP_METHOD_NOT_ALLOWED": "Method Not Allowed",
+  "HTTP_NOT_FOUND": "Not Found",
+  "HTTP_INVALID_PAGE": "p must be one int32 value",
+  "HTTP_INVALID_PAGE_SIZE": "s must be one int32 value",
+  "HTTP_SERVICE_UNAVAILABLE": "Service Unavailable",
+  "HTTP_UNAUTHORIZED": "Unauthorized",
+  "GAME_NOT_FOUND": "game not found",
+  "GAME_INVALID": "invalid game: positive id and name of 1-100 characters required",
+  "GAME_INVALID_IDS": "provide 1-100 positive game ids",
+  "GAME_INVALID_ID": "invalid game id"
+}
